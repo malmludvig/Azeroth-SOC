@@ -9,7 +9,7 @@ Planen har nio steg (se "Repostruktur och plan för fas 2" i designen). Gör ett
 - Steg 1, labbet för hand: klart. `lab/verify.sh` är kört på utvecklingsmaskinen (Windows 11, x86-64, Docker Desktop 29 med WSL 2, kärna 6.18) med macvlan-nät.
 - Steg 2, orkestreraren: klart, utom socket-proxyn som flyttas till steg 4. `Game.Cli soak 10` är grön på utvecklingsmaskinen med de riktiga avbilderna och macvlan.
 - Steg 3, målkontrollen: klart. `Game.Cli selftest` dömer 16 kända försvar rätt på utvecklingsmaskinen med riktig nginx och macvlan, två körningar i rad med jämna mätvärden. Våg 0 (spelarens rapport) har ingen kontroll ännu; den hör till `quest`-kommandot i steg 5.
-- Steg 4, isoleringstester och socket-proxy: koden finns (`Game.Cli isolation`, `Game.Cli proxytest`, `src/Game.DockerProxy`). Kört mot Docker 29 på Linux med ersättningsavbilder och bridge-nät: proxytestet är grönt, och isoleringstestet underkänner där bara det bridge-nät ska underkännas för (Docker-värden sitter på labbnätet). Återstår att köra båda på utvecklingsmaskinen med macvlan.
+- Steg 4, isoleringstester och socket-proxy: klart. `Game.Cli isolation` (49 kontroller) och `Game.Cli proxytest` (31 kontroller) är gröna på utvecklingsmaskinen med macvlan.
 - Steg 5, scenariomotorn: inte påbörjad.
 
 ## Stack
@@ -84,6 +84,7 @@ Dessa är krav, inte riktlinjer. Ändra dem inte utan att fråga.
 ## Konventioner
 
 - Dokumentation på svenska. Kod, kommentarer, identifierare och skriptutskrifter på engelska.
+- Efter `git pull` på utvecklingsmaskinen: bygg med `dotnet build --no-incremental`. När klockan i WSL går fel hoppar det vanliga bygget över ändrade filer utan varning.
 - Utvecklingsmaskinen är Windows 11. Repot ska ligga i WSL 2:s eget filsystem (inte under `/mnt/c`) och alla skript körs i en WSL-terminal.
 - Skalskript skrivs för bash och ska ha LF-radslut (`.gitattributes` ser till det).
 - Containrar heter `azeroth-lab-<roll>-1` i det fasta labbet och `azl-<körnings-id>-<roll>` i orkestrerade körningar. Roller: `gate`, `web`, `citizens`, `garrison`, `defias`, `probe`.
