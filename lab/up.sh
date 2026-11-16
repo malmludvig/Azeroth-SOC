@@ -6,6 +6,17 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+if ! docker compose version >/dev/null 2>&1; then
+  echo "\"docker compose\" is not available in this shell."
+  echo "On Windows: enable WSL integration for this distro in Docker Desktop"
+  echo "(Settings > Resources > WSL integration), then open a new terminal."
+  exit 1
+fi
+if ! docker info >/dev/null 2>&1; then
+  echo "Cannot reach the Docker daemon. Is Docker Desktop running?"
+  exit 1
+fi
+
 export LAB_NET_DRIVER="${LAB_NET_DRIVER:-macvlan}"
 if ! docker compose up -d --build; then
   if [ "$LAB_NET_DRIVER" = "macvlan" ]; then
