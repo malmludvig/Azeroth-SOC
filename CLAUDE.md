@@ -9,7 +9,8 @@ Planen har nio steg (se "Repostruktur och plan för fas 2" i designen). Gör ett
 - Steg 1, labbet för hand: klart. `lab/verify.sh` är kört på utvecklingsmaskinen (Windows 11, x86-64, Docker Desktop 29 med WSL 2, kärna 6.18) med macvlan-nät.
 - Steg 2, orkestreraren: klart, utom socket-proxyn som flyttas till steg 4. `Game.Cli soak 10` är grön på utvecklingsmaskinen med de riktiga avbilderna och macvlan.
 - Steg 3, målkontrollen: klart. `Game.Cli selftest` dömer 16 kända försvar rätt på utvecklingsmaskinen med riktig nginx och macvlan, två körningar i rad med jämna mätvärden. Våg 0 (spelarens rapport) har ingen kontroll ännu; den hör till `quest`-kommandot i steg 5.
-- Steg 4, isoleringstester och socket-proxy: inte påbörjat.
+- Steg 4, isoleringstester och socket-proxy: koden finns (`Game.Cli isolation`, `Game.Cli proxytest`, `src/Game.DockerProxy`). Kört mot Docker 29 på Linux med ersättningsavbilder och bridge-nät: proxytestet är grönt, och isoleringstestet underkänner där bara det bridge-nät ska underkännas för (Docker-värden sitter på labbnätet). Återstår att köra båda på utvecklingsmaskinen med macvlan.
+- Steg 5, scenariomotorn: inte påbörjad.
 
 ## Stack
 
@@ -39,6 +40,10 @@ dotnet run --project src/Game.Cli -- sweep    # ta bort alla körningar (--expir
 dotnet run --project src/Game.Cli -- soak 10  # test av steg 2: tio varv utan kvarlämnade resurser
 dotnet run --project src/Game.Cli -- check 1  # döm den pågående körningen mot våg 1, 2 eller 3
 dotnet run --project src/Game.Cli -- selftest # test av steg 3: kända rätta och felaktiga försvar, tar drygt tre minuter
+dotnet run --project src/Game.Cli -- isolation # test av steg 4: försök ta sig ut ur labbet från varje container
+dotnet run --project src/Game.DockerProxy     # starta Docker-proxyn (egen terminal)
+dotnet run --project src/Game.Cli -- proxytest # test av steg 4: förbjudna anrop mot proxyn ska nekas
+export DOCKER_HOST=unix://$HOME/.azeroth/docker-proxy.sock   # kör Game.Cli genom proxyn
 ```
 
 ## Principer
@@ -65,6 +70,9 @@ Dessa är krav, inte riktlinjer. Ändra dem inte utan att fråga.
 - **`gate` har `NET_RAW` utöver `NET_ADMIN`.** tcpdump och ping kräver det. Designen säger "`NET_ADMIN` och inget mer". Kör tcpdump utan `-Z`: flaggan får tcpdump att byta användare, vilket kräver capabilities som `gate` saknar.
 - **Rutterna läggs till från värden** med `docker exec --privileged ... ip route` i `lab/up.sh`. Då behöver ingen annan container än `gate` `NET_ADMIN`. Orkestreraren i steg 2 ska göra samma sak.
 - **Egen Docker-klient i stället för Docker.DotNet.** `DockerEngine` talar direkt med Docker Engine API över socketen och har bara de anrop labbet behöver. Listan över anrop är densamma som en socket-proxy ska släppa igenom. Lägg inte till anrop utan att fråga.
+- **Docker-proxyn är egen kod** (`src/Game.DockerProxy`), inte en färdig avbild. Den släpper igenom exakt de anrop `DockerEngine` gör och granskar innehållet: bara labbets avbilder, namn, etiketter och adressrymd, inga monteringar, inga okända inställningar, och privilegierad exec bara för `ip route replace` inom adressrymden. Allt som inte står på listan nekas, så ett nytt anrop i `DockerEngine` kräver en ny regel i `Policy.cs` och ett nytt fall i `ProxyTest.cs`.
+- **Proxyn skyddar först när backend saknar egen åtkomst till Docker.** På utvecklingsmaskinen kör allt som samma användare, och proxyn är där frivillig. I driftsättningen (steg 9) ska backend köra som en användare utanför `docker`-gruppen med `DOCKER_HOST` satt till proxyns socket.
+- **Bridge-nät klarar inte isoleringstestet.** På en bridge sitter Docker-värden på `.1` i varje labbnät. Reservvägen `LAB_NET_DRIVER=bridge` är därför bara till för felsökning.
 - **All status ligger i etiketter** på containrar och nät (`azeroth.lab`, `azeroth.run`, `azeroth.seed`, `azeroth.expires`). En körning är en ren funktion av scenario och frö och byggs om från etiketterna. Det finns ingen statusfil.
 - **Testerna är kommandon i `Game.Cli`** (`soak`, `selftest`), inte xunit-projekt. Nya kontroller ska få sina rätta och felaktiga försvar i `SelfTest.cs`.
 - **Floden i våg 3 kommer från två värdar i tur och ordning** (`defias`, sedan `probe`). Det ersätter designens adressbyte halvvägs och ger samma lektion: en spärrlista med en adress håller inte. Takten räknas i webbserverns logg efter den första sekunden, så att ett burst-utrymme inte räknas mot försvaret.

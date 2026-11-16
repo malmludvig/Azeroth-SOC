@@ -2,7 +2,7 @@
 
 Ett personligt lärospel i nätverkssäkerhet. Du försvarar riktiga system i isolerade containrar med riktiga verktyg, och spelet dömer genom att skicka riktig trafik.
 
-Designen finns i [docs/design.md](docs/design.md). Projektet är i steg 3 av 9: labbet, orkestreraren och målkontrollen finns, spelet är inte byggt ännu.
+Designen finns i [docs/design.md](docs/design.md). Projektet är i steg 4 av 9: labbet, orkestreraren, målkontrollen, isoleringstesterna och Docker-proxyn finns, spelet är inte byggt ännu.
 
 ## Prova labbet
 

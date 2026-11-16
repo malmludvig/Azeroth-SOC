@@ -12,6 +12,8 @@ using Game.Orchestration;
 //   soak [N]                    up, reset, down N times and check that nothing is left behind
 //   check <wave>                judge the current run against a wave (1 to 3)
 //   selftest                    judge known right and wrong defences and require the expected verdicts
+//   isolation                   try to get out of the lab from every container; every attempt must fail
+//   proxytest                   send forbidden requests to the Docker proxy; every one must be refused
 
 var command = args.Length > 0 ? args[0] : "help";
 var options = args.Skip(1).ToArray();
@@ -31,8 +33,10 @@ try
         case "soak": return await Soak(lab, options);
         case "check": return await Check(docker, lab, options);
         case "selftest": return await SelfTest.RunAsync(docker, lab);
+        case "isolation": return await IsolationTest.RunAsync(docker, lab);
+        case "proxytest": return await ProxyTest.RunAsync();
         default:
-            Console.WriteLine("Usage: Game.Cli up [--seed N] [--replace] | status | reset | down | sweep [--expired] | soak [N] | check <wave> | selftest");
+            Console.WriteLine("Usage: Game.Cli up [--seed N] [--replace] | status | reset | down | sweep [--expired] | soak [N] | check <wave> | selftest | isolation | proxytest");
             return command == "help" ? 0 : 2;
     }
 }
