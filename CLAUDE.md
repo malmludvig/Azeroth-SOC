@@ -8,7 +8,7 @@ Planen har nio steg (se "Repostruktur och plan för fas 2" i designen). Gör ett
 
 - Steg 1, labbet för hand: klart. `lab/verify.sh` är kört på utvecklingsmaskinen (Windows 11, x86-64, Docker Desktop 29 med WSL 2, kärna 6.18) med macvlan-nät.
 - Steg 2, orkestreraren: klart, utom socket-proxyn som flyttas till steg 4. `Game.Cli soak 10` är grön på utvecklingsmaskinen med de riktiga avbilderna och macvlan.
-- Steg 3, målkontrollen: koden finns i `src/Game.Checks`. `Game.Cli selftest` dömer 16 kända försvar rätt mot Docker 29 på Linux med ersättningsavbilder och bridge-nät, tre körningar i rad. Återstår att köra den på utvecklingsmaskinen. Våg 0 (spelarens rapport) har ingen kontroll ännu; den hör till `quest`-kommandot i steg 5.
+- Steg 3, målkontrollen: klart. `Game.Cli selftest` dömer 16 kända försvar rätt på utvecklingsmaskinen med riktig nginx och macvlan, två körningar i rad med jämna mätvärden. Våg 0 (spelarens rapport) har ingen kontroll ännu; den hör till `quest`-kommandot i steg 5.
 - Steg 4, isoleringstester och socket-proxy: inte påbörjat.
 
 ## Stack
@@ -68,6 +68,7 @@ Dessa är krav, inte riktlinjer. Ändra dem inte utan att fråga.
 - **All status ligger i etiketter** på containrar och nät (`azeroth.lab`, `azeroth.run`, `azeroth.seed`, `azeroth.expires`). En körning är en ren funktion av scenario och frö och byggs om från etiketterna. Det finns ingen statusfil.
 - **Testerna är kommandon i `Game.Cli`** (`soak`, `selftest`), inte xunit-projekt. Nya kontroller ska få sina rätta och felaktiga försvar i `SelfTest.cs`.
 - **Floden i våg 3 kommer från två värdar i tur och ordning** (`defias`, sedan `probe`). Det ersätter designens adressbyte halvvägs och ger samma lektion: en spärrlista med en adress håller inte. Takten räknas i webbserverns logg efter den första sekunden, så att ett burst-utrymme inte räknas mot försvaret.
+- **Ingen kontroll får bero på väggklockan.** Klockan i WSL 2 kan gå fel med tiotals minuter och justeras i hopp efter att Windows legat i vila. En flod som pågick till ett klockslag tog då slut för tidigt och gav för låga mätvärden. Trafikskript räknar anrop, C#-koden mäter med `Stopwatch`, och en mätning som inte blev som planerat döms som underkänd (`INCONCLUSIVE`), aldrig som godkänd.
 - **Kontrollerna för Sentinel Hill ligger i kod** (`SentinelHillChecks.cs`) tills YAML-laddningen kommer i steg 5.
 - **Topologin för Sentinel Hill ligger i kod** (`SentinelHill.cs`) tills YAML-laddningen kommer i steg 5.
 - **En delad avbild för värdarna på slätten** (`lab/images/host`) tills trafikskripten kommer i steg 5.
