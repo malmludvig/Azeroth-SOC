@@ -7,7 +7,7 @@ Ett lärospel i nätverkssäkerhet för en spelare. Spelaren försvarar riktiga 
 Planen har nio steg (se "Repostruktur och plan för fas 2" i designen). Gör ett steg i taget och stanna när stegets "klart när" är uppfyllt.
 
 - Steg 1, labbet för hand: klart. `lab/verify.sh` är kört på utvecklingsmaskinen (Windows 11, x86-64, Docker Desktop 29 med WSL 2, kärna 6.18) med macvlan-nät.
-- Steg 2, orkestreraren: koden finns i `src/`. `Game.Cli soak 10` är grön mot Docker 29 på Linux med ersättningsavbilder och bridge-nät. Återstår att köra den på utvecklingsmaskinen med de riktiga avbilderna och macvlan. Socket-proxyn är inte gjord.
+- Steg 2, orkestreraren: klart, utom socket-proxyn som flyttas till steg 4. `Game.Cli soak 10` är grön på utvecklingsmaskinen med de riktiga avbilderna och macvlan.
 - Steg 3, målkontrollen: inte påbörjad.
 
 ## Stack
