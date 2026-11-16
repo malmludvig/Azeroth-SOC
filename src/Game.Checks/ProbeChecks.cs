@@ -59,7 +59,11 @@ public sealed class FloodCheck(
     string id, IReadOnlyList<string> attackerRoles, string citizensRole,
     double maxPerSecond, double minCitizenRate) : ICheck
 {
-    private const int FloodSeconds = 6;
+    // About six seconds of flood. The sender counts requests instead of
+    // watching the clock: a wall clock that is being corrected would cut the
+    // flood short and make a weak defence look strong.
+    private const int FloodRequests = 270;
+    private const int MinimumSent = FloodRequests * 9 / 10;
     private const int CitizenRequests = 20;
 
     public string Id => id;
@@ -72,7 +76,7 @@ public sealed class FloodCheck(
         foreach (var attacker in attackerRoles)
         {
             var address = context.AddressOf(attacker);
-            var flood = Traffic.FloodAsync(context, attacker, FloodSeconds, ct);
+            var flood = Traffic.FloodAsync(context, attacker, FloodRequests, ct);
             var citizens = Traffic.OrdinaryRequestsAsync(context, citizensRole, CitizenRequests, ct);
 
             await Task.Delay(1500, ct);
@@ -82,18 +86,27 @@ public sealed class FloodCheck(
             var after = await context.ServedToAsync(address, ct);
             var perSecond = (after - before) / clock.Elapsed.TotalSeconds;
 
-            rates.Add((attacker, perSecond, await flood));
+            // The flood must still be running when the second sample is taken,
+            // or the rate is diluted by silence.
+            var stillFlooding = !flood.IsCompleted;
+            var report = await flood;
+            if (!stillFlooding)
+                report = report with { Problem = report.Problem + ", flood ended before the measurement did" };
+            rates.Add((attacker, perSecond, report));
             answered += await citizens;
         }
 
         var sent = CitizenRequests * attackerRoles.Count;
         var citizenRate = (double)answered / sent;
         var worst = rates.Max(r => r.PerSecond);
-        var passed = worst <= maxPerSecond && citizenRate >= minCitizenRate;
+        // A flood that did not happen proves nothing, so it can never pass.
+        var conclusive = rates.All(r => r.Sent.Sent >= MinimumSent && r.Sent.Problem.Length == 0);
+        var passed = conclusive && worst <= maxPerSecond && citizenRate >= minCitizenRate;
 
         var summary = string.Join(", ", rates.Select(r => string.Create(CultureInfo.InvariantCulture,
             $"{r.Role} {r.PerSecond:0.0}/s [sent {r.Sent.Sent}, answered {r.Sent.Answered}{r.Sent.Problem}]")));
         return new CheckResult(id, passed,
+            (conclusive ? "" : "INCONCLUSIVE, the flood was not as planned; ") +
             $"got through: {summary} (max {maxPerSecond:0}/s); " +
             $"{citizensRole}: {answered}/{sent} answered (needs {minCitizenRate:P0})");
     }
@@ -118,16 +131,15 @@ internal static class Traffic
     }
 
     /// <summary>
-    /// A steady stream of requests for the given time, roughly 40 a second.
+    /// A steady stream of the given number of requests, roughly 45 a second.
     /// Evenly spaced on purpose: clumps would leave gaps in which a shared
     /// limit has refilled, and ordinary requests would slip through unharmed.
     /// </summary>
     public static async Task<FloodReport> FloodAsync(
-        CheckContext context, string fromRole, int seconds, CancellationToken ct)
+        CheckContext context, string fromRole, int requests, CancellationToken ct)
     {
         var script =
-            $"end=$(( $(date +%s) + {seconds} )); " +
-            "while [ $(date +%s) -lt $end ]; do " +
+            $"i=0; while [ $i -lt {requests} ]; do i=$((i+1)); " +
             $"curl -s -o /dev/null -m 1 -w '%{{http_code}}\\n' http://{context.WebAddress}/ & sleep 0.02; " +
             "done; wait";
         var result = await context.ShellAsync(fromRole, script, ct);
