@@ -6,8 +6,8 @@ Ett lärospel i nätverkssäkerhet för en spelare. Spelaren försvarar riktiga 
 
 Planen har nio steg (se "Repostruktur och plan för fas 2" i designen). Gör ett steg i taget och stanna när stegets "klart när" är uppfyllt.
 
-- Steg 1, labbet för hand: filerna finns i `lab/`. Skriptlogiken är körd mot Docker 29 på Linux. Återstår att köra `lab/up.sh` och `lab/verify.sh` på utvecklingsmaskinen (Windows 11, x86-64, Docker Desktop med WSL 2).
-- Steg 2 och framåt: inte påbörjade. Ingen .NET-kod finns ännu.
+- Steg 1, labbet för hand: klart. `lab/verify.sh` är kört på utvecklingsmaskinen (Windows 11, x86-64, Docker Desktop 29 med WSL 2, kärna 6.18) med macvlan-nät.
+- Steg 2, orkestreraren: nästa steg. Ingen .NET-kod finns ännu.
 
 ## Stack
 
@@ -46,7 +46,7 @@ Dessa är krav, inte riktlinjer. Ändra dem inte utan att fråga.
 ## Beslut som avviker från eller preciserar designen
 
 - **Nätdrivrutin: macvlan, inte bridge.** På en Docker-bridge med `internal: true` släpper värdens brandvägg bara igenom paket där både käll- och måladress ligger i bryggans eget subnät, när värden filtrerar bryggad trafik. Routad trafik genom `gate` har alltid en adress utanför subnätet och tappas. Uppmätt på Docker 29, Linux. `lab/compose.yaml` använder därför macvlan på en dummy-förälder; `LAB_NET_DRIVER=bridge` är en reservväg och `lab/up.sh` faller tillbaka på den automatiskt.
-- **`gate` har `NET_RAW` utöver `NET_ADMIN`.** tcpdump och ping kräver det. Designen säger "`NET_ADMIN` och inget mer".
+- **`gate` har `NET_RAW` utöver `NET_ADMIN`.** tcpdump och ping kräver det. Designen säger "`NET_ADMIN` och inget mer". Kör tcpdump utan `-Z`: flaggan får tcpdump att byta användare, vilket kräver capabilities som `gate` saknar.
 - **Rutterna läggs till från värden** med `docker exec --privileged ... ip route` i `lab/up.sh`. Då behöver ingen annan container än `gate` `NET_ADMIN`. Orkestreraren i steg 2 ska göra samma sak.
 - **En delad avbild för värdarna på slätten** (`lab/images/host`) tills trafikskripten kommer i steg 5.
 

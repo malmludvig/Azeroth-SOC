@@ -116,7 +116,7 @@ if [ "$calm" -eq 5 ]; then ok "citizens at 1 request/s are unaffected ($calm/5)"
 
 echo
 echo "4. Packet capture in gate"
-(x gate timeout 8 tcpdump -Z root -c 1 -n -i any "tcp port 80 and host ${WEB}" >/dev/null 2>&1) &
+(x gate timeout 8 tcpdump -c 1 -n -i any "tcp port 80 and host ${WEB}" >/dev/null 2>&1) &
 capture=$!
 sleep 2
 http_code probe >/dev/null
