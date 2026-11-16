@@ -10,14 +10,15 @@ Planen har nio steg (se "Repostruktur och plan för fas 2" i designen). Gör ett
 - Steg 2, orkestreraren: klart, utom socket-proxyn som flyttas till steg 4. `Game.Cli soak 10` är grön på utvecklingsmaskinen med de riktiga avbilderna och macvlan.
 - Steg 3, målkontrollen: klart. `Game.Cli selftest` dömer 16 kända försvar rätt på utvecklingsmaskinen med riktig nginx och macvlan, två körningar i rad med jämna mätvärden. Våg 0 (spelarens rapport) har ingen kontroll ännu; den hör till `quest`-kommandot i steg 5.
 - Steg 4, isoleringstester och socket-proxy: klart. `Game.Cli isolation` (49 kontroller) och `Game.Cli proxytest` (31 kontroller) är gröna på utvecklingsmaskinen med macvlan.
-- Steg 5, scenariomotorn: inte påbörjad.
+- Steg 5, scenariomotorn: koden finns i `src/Game.Core`, scenariot i `lab/scenarios/sentinel-hill.json` och `quest`-kommandot i `gate`-avbilden. `Game.Cli playtest` spelar igenom hela scenariot mot Docker 29 på Linux med ersättningsavbilder och bridge-nät. Återstår att köra `playtest` på utvecklingsmaskinen och att spela scenariot för hand och avgöra om det är roligt.
+- Steg 6, terminalgatewayen: inte påbörjad.
 
 ## Stack
 
 - .NET 10. Backend: ASP.NET Core, SignalR och en egen tunn Docker-klient (`DockerEngine`). All spellogik ligger här.
 - Klient: TypeScript, Phaser 3, xterm.js. Tunn, innehåller inga regler.
 - Lagring: SQLite.
-- Scenarion: YAML i `lab/scenarios/`. Tema: `themes/theme-wow.json`.
+- Scenarion: JSON i `lab/scenarios/`. Tema: `themes/theme-wow.json` (steg 8).
 
 ## Kommandon
 
@@ -40,6 +41,8 @@ dotnet run --project src/Game.Cli -- sweep    # ta bort alla körningar (--expir
 dotnet run --project src/Game.Cli -- soak 10  # test av steg 2: tio varv utan kvarlämnade resurser
 dotnet run --project src/Game.Cli -- check 1  # döm den pågående körningen mot våg 1, 2 eller 3
 dotnet run --project src/Game.Cli -- selftest # test av steg 3: kända rätta och felaktiga försvar, tar drygt tre minuter
+dotnet run --project src/Game.Cli -- play     # spela: den här terminalen är spelledare, spelaren sitter i gate och skriver quest
+dotnet run --project src/Game.Cli -- playtest # test av steg 5: automatisk genomspelning med fel försök och ledtrådar
 dotnet run --project src/Game.Cli -- isolation # test av steg 4: försök ta sig ut ur labbet från varje container
 dotnet run --project src/Game.DockerProxy     # starta Docker-proxyn (egen terminal)
 dotnet run --project src/Game.Cli -- proxytest # test av steg 4: förbjudna anrop mot proxyn ska nekas
@@ -77,9 +80,12 @@ Dessa är krav, inte riktlinjer. Ändra dem inte utan att fråga.
 - **Testerna är kommandon i `Game.Cli`** (`soak`, `selftest`), inte xunit-projekt. Nya kontroller ska få sina rätta och felaktiga försvar i `SelfTest.cs`.
 - **Floden i våg 3 kommer från två värdar i tur och ordning** (`defias`, sedan `probe`). Det ersätter designens adressbyte halvvägs och ger samma lektion: en spärrlista med en adress håller inte. Takten räknas i webbserverns logg efter den första sekunden, så att ett burst-utrymme inte räknas mot försvaret.
 - **Ingen kontroll får bero på väggklockan.** Klockan i WSL 2 kan gå fel med tiotals minuter och justeras i hopp efter att Windows legat i vila. En flod som pågick till ett klockslag tog då slut för tidigt och gav för låga mätvärden. Trafikskript räknar anrop, C#-koden mäter med `Stopwatch`, och en mätning som inte blev som planerat döms som underkänd (`INCONCLUSIVE`), aldrig som godkänd.
-- **Kontrollerna för Sentinel Hill ligger i kod** (`SentinelHillChecks.cs`) tills YAML-laddningen kommer i steg 5.
-- **Topologin för Sentinel Hill ligger i kod** (`SentinelHill.cs`) tills YAML-laddningen kommer i steg 5.
-- **En delad avbild för värdarna på slätten** (`lab/images/host`) tills trafikskripten kommer i steg 5.
+- **Scenariot är JSON, inte YAML.** `lab/scenarios/sentinel-hill.json` bestämmer vågor, vilka kontroller varje våg använder och med vilka tal, ledtrådar och all text spelaren ser. Kontrollernas kod ligger i `Game.Checks` och topologin i `SentinelHill.cs`. Textfält är listor av rader.
+- **Scenariotexten är neutral och på engelska.** Den säger "the notice board" och "the garrison", inga WoW-namn. Namn, dialog och språk läggs ovanpå av temafilen i steg 8.
+- **`quest` talar med spelet genom filer i `/run/quest` i `gate`.** Porten har ingen nätväg till spelet. `quest` lämnar en begäran, spelledaren hämtar den utifrån med `docker exec` och lämnar ett svar. Inget spelet avgör vilar på de filerna: rapporten jämförs med facit och vågor döms av trafik.
+- **En våg är själva domen.** Trafiken i en våg är kontrollernas trafik, 10 till 25 sekunder. Det finns ingen separat fas där spelaren justerar under pågående attack; spelaren justerar och ringer i klockan igen. Genomgången efter en våg är kontrollernas utfall och portens läge, inte en tidslinje från regelräknare.
+- **Poäng**: vågens grundpoäng, minus 20 per ledtrådsnivå och 10 per misslyckat försök, lägst 10. En våg är bemästrad om den hölls utan ledtråd. Framsteg sparas inte mellan körningar förrän i steg 8; `play --wave N` hoppar till en våg.
+- **En delad avbild för värdarna på slätten** (`lab/images/host`). Trafiken skickas med `docker exec` från `Game.Checks`.
 
 ## Konventioner
 

@@ -2,7 +2,7 @@
 
 Ett personligt lärospel i nätverkssäkerhet. Du försvarar riktiga system i isolerade containrar med riktiga verktyg, och spelet dömer genom att skicka riktig trafik.
 
-Designen finns i [docs/design.md](docs/design.md). Projektet är i steg 4 av 9: labbet, orkestreraren, målkontrollen, isoleringstesterna och Docker-proxyn finns, spelet är inte byggt ännu.
+Designen finns i [docs/design.md](docs/design.md). Projektet är i steg 5 av 9: scenariot Sentinel Hill går att spela i terminalen. Grafik och webbklient finns inte ännu.
 
 ## Prova labbet
 
@@ -24,13 +24,14 @@ dotnet run --project src/Game.Cli -- soak 10
 dotnet run --project src/Game.Cli -- selftest
 ```
 
-Skriv egna regler i porten och låt spelet döma dem:
+## Spela
 
 ```bash
-dotnet run --project src/Game.Cli -- up
-docker exec -it azl-<id>-gate bash      # skriv dina nftables-regler här
-dotnet run --project src/Game.Cli -- check 1
+lab/build.sh
+dotnet run --project src/Game.Cli -- play
 ```
+
+Terminalen blir spelledare och skriver ut ett `docker exec`-kommando. Kör det i en andra terminal för att kliva in i porten, och skriv `quest`. Därifrån sköter du allt: `quest` visar uppdraget, `quest hint` ger en ledtråd, `quest ready` ringer i klockan.
 
 Topologin i det fasta labbet:
 

@@ -1,0 +1,59 @@
+#!/bin/bash
+# quest: the player's line to the game master.
+#
+# The gate has no network path to the game, so the two talk through files in
+# /run/quest: this script leaves a request, the game master picks it up from
+# outside the container and leaves a reply.
+
+dir=/run/quest
+
+usage() {
+  cat <<'EOF'
+quest            show the current mission
+quest hint       ask for a hint (three levels, each costs experience)
+quest report ... hand in a report, when the mission asks for one
+quest ready      ring the bell: the wave comes and your defence is judged
+EOF
+}
+
+verb="${1:-status}"
+case "$verb" in
+  status)
+    if [ -f "$dir/briefing" ]; then cat "$dir/briefing"; else echo "No game is running."; fi
+    exit 0
+    ;;
+  hint | report | ready) ;;
+  *)
+    usage
+    exit 0
+    ;;
+esac
+
+if [ ! -f "$dir/briefing" ]; then
+  echo "No game is running."
+  exit 1
+fi
+
+id="$$-$RANDOM"
+printf '%s %s\n' "$id" "$*" > "$dir/request.tmp" && mv "$dir/request.tmp" "$dir/request"
+
+# A judged wave takes a while; everything else is answered at once.
+tries=40
+if [ "$verb" = ready ] && [ "$(cat "$dir/mode" 2>/dev/null)" = traffic ]; then
+  echo "The bell rings. Hold the gate..."
+  tries=600
+fi
+
+i=0
+while [ ! -f "$dir/reply.$id" ]; do
+  i=$((i + 1))
+  if [ "$i" -gt "$tries" ]; then
+    rm -f "$dir/request"
+    echo "The game master does not answer. Is the game still running?"
+    exit 1
+  fi
+  sleep 0.3
+done
+
+cat "$dir/reply.$id"
+rm -f "$dir/reply.$id"

@@ -1,4 +1,5 @@
 using Game.Checks;
+using Game.Core;
 using Game.Orchestration;
 
 /// <summary>
@@ -54,8 +55,15 @@ internal static class SelfTest
         new(3, "limit per source far too generous", false, PerSource(100, Management, Board)),
     ];
 
+    /// <summary>A defence known to hold the given wave, for tests that need to get past it.</summary>
+    public static string RightDefence(int wave) => Defences.First(d => d.Wave == wave && d.ShouldPass).Rules;
+
+    /// <summary>A defence that drops by default but forgets the replies.</summary>
+    public static string NoEstablishedDefence => Defences.First(d => d.Name == "no rule for established flows").Rules;
+
     public static async Task<int> RunAsync(DockerEngine docker, LabOrchestrator lab)
     {
+        var scenario = Scenario.Load(Scenario.Locate(SentinelHill.Scenario));
         if ((await lab.ListAsync()).Count > 0)
         {
             Console.Error.WriteLine("A lab is already running. Remove it first: down");
@@ -71,8 +79,8 @@ internal static class SelfTest
         {
             foreach (var defence in Defences)
             {
-                await LoadAsync(docker, run, context, defence.Rules);
-                var verdict = await SentinelHillChecks.JudgeAsync(defence.Wave, context);
+                await LoadAsync(docker, run, defence.Rules);
+                var verdict = await scenario.JudgeAsync(defence.Wave, context);
                 var agrees = verdict.Passed == defence.ShouldPass;
                 if (!agrees) wrong++;
 
@@ -80,7 +88,7 @@ internal static class SelfTest
                     $"{(agrees ? "ok   " : "WRONG")}  wave {defence.Wave}  " +
                     $"{(defence.ShouldPass ? "right" : "wrong")} defence judged " +
                     $"{(verdict.Passed ? "PASS" : "FAIL")}  {defence.Name}");
-                foreach (var result in verdict.Results.Where(r => !r.Passed || !agrees))
+                foreach (var result in verdict.Outcomes.Select(o => o.Result).Where(r => !r.Passed || !agrees))
                     Console.WriteLine($"         {(result.Passed ? "pass" : "fail")}  {result.Id}: {result.Detail}");
             }
         }
@@ -95,8 +103,9 @@ internal static class SelfTest
         return wrong == 0 ? 0 : 1;
     }
 
-    private static async Task LoadAsync(DockerEngine docker, LabRun run, CheckContext context, string rules)
+    public static async Task LoadAsync(DockerEngine docker, LabRun run, string rules)
     {
+        var context = new CheckContext(docker, run);
         var text = "flush ruleset\n" + rules
             .Replace("{WEB}", context.WebAddress)
             .Replace("{GARRISON}", context.AddressOf("garrison"))

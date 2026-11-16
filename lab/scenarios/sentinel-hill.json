@@ -1,0 +1,292 @@
+{
+  "id": "sentinel-hill",
+  "title": "Hold the gate",
+  "intro": [
+    "You guard the gate between the plains and the town.",
+    "Everything that travels between them passes through you.",
+    "The town's notice board must stay open to the citizens. Nothing else is for outsiders."
+  ],
+  "outro": [
+    "The gate holds. Scouts found one open door, the garrison alone can manage the board,",
+    "and the swarm broke against a limit that follows each source wherever it comes from."
+  ],
+  "waves": [
+    {
+      "number": 0,
+      "title": "Map the gate",
+      "kind": "report",
+      "xp": 50,
+      "briefing": [
+        "Nobody attacks yet. Before you can defend the gate you have to know what passes it.",
+        "",
+        "The notice board is the host {web}.",
+        "Find out:",
+        "  - the network on the plains side of the gate",
+        "  - the network on the town side of the gate",
+        "  - every TCP port on the notice board that answers from here",
+        "",
+        "Report with:",
+        "  quest report plains=<network/prefix> dmz=<network/prefix> ports=<port,port,...>"
+      ],
+      "question": "Four services answered. How many of them does a citizen reading the board need?",
+      "hints": [
+        {
+          "level": 1,
+          "text": [
+            "A router knows its networks: each of its interfaces sits in one.",
+            "A service is a port that answers when you knock."
+          ]
+        },
+        {
+          "level": 2,
+          "text": [
+            "Look at the gate's addresses and routes with the ip command.",
+            "Knock on a range of ports with nc in scan mode. Not every service uses a low port."
+          ]
+        },
+        {
+          "level": 3,
+          "text": [
+            "ip -br addr          one line per interface, address with prefix length",
+            "ip route             the networks as the kernel sees them",
+            "nc -zv {web} 1-30000 2>&1 | grep succeeded"
+          ]
+        }
+      ]
+    },
+    {
+      "number": 1,
+      "title": "The scouts",
+      "kind": "traffic",
+      "xp": 100,
+      "briefing": [
+        "Scouts on the plains are mapping everything they can reach through the gate.",
+        "Right now that is everything: the gate forwards whatever arrives.",
+        "",
+        "Make the notice board's web port ({http}) the only thing an outsider can reach on {web}.",
+        "Citizens must still be able to read the board.",
+        "",
+        "Write your rules with nft. When you are ready: quest ready"
+      ],
+      "question": "Who else than the citizens needs to reach this server, and for what?",
+      "checks": [
+        {
+          "id": "scouts-reach-only-the-board",
+          "type": "ports",
+          "title": "The scouts reach the notice board and nothing else",
+          "from": "defias",
+          "open": ["http"],
+          "closed": ["management", "debug", "database"]
+        },
+        {
+          "id": "citizens-are-served",
+          "type": "success-rate",
+          "title": "The citizens can read the board",
+          "from": "citizens",
+          "requests": 20,
+          "min": 0.99
+        }
+      ],
+      "hints": [
+        {
+          "level": 1,
+          "text": [
+            "A gate that lets through everything that is not forbidden has already lost.",
+            "Turn it around: forbid everything, then open what is needed."
+          ]
+        },
+        {
+          "level": 2,
+          "when": "no-forward-chain",
+          "text": [
+            "The gate has no rules for traffic it forwards.",
+            "In nftables that traffic passes a chain on the forward hook. Create one and give it a policy."
+          ]
+        },
+        {
+          "level": 2,
+          "when": "policy-accept",
+          "text": [
+            "Your forward chain accepts by default, so every port you did not think of is open.",
+            "Look at the chain's policy."
+          ]
+        },
+        {
+          "level": 2,
+          "when": "no-established",
+          "text": [
+            "Your chain drops by default, and that includes the answers.",
+            "A request you let in needs its reply let out. Connection tracking knows which packets belong to a flow you already accepted: ct state."
+          ]
+        },
+        {
+          "level": 2,
+          "text": [
+            "Look at the chain for forwarded traffic and its policy.",
+            "Do not forget the replies to flows you have already let in."
+          ]
+        },
+        {
+          "level": 3,
+          "text": [
+            "Fill in the blanks, save as a file and load it with: nft -f <file>",
+            "",
+            "flush ruleset",
+            "table inet gate {",
+            "  chain forward {",
+            "    type filter hook forward priority 0; policy ____;",
+            "    ct state ____,related accept",
+            "    ip daddr {web} tcp dport ____ accept",
+            "  }",
+            "}"
+          ]
+        }
+      ]
+    },
+    {
+      "number": 2,
+      "title": "The break-in",
+      "kind": "traffic",
+      "xp": 100,
+      "briefing": [
+        "The scouts are gone. Now someone is trying to log in to the notice board's management port ({management}),",
+        "again and again, from several hosts on the plains.",
+        "",
+        "The garrison manages the board from {garrison} and must keep that access.",
+        "Nobody else should be able to reach the management port at all.",
+        "Everything from the last wave still has to hold.",
+        "",
+        "When you are ready: quest ready"
+      ],
+      "question": "The garrison's address is now a key. What happens the day someone else gets that address?",
+      "checks": [
+        {
+          "id": "garrison-can-manage",
+          "type": "ports",
+          "title": "The garrison reaches the management port",
+          "from": "garrison",
+          "open": ["management", "http"]
+        },
+        {
+          "id": "probe-cannot-manage",
+          "type": "ports",
+          "title": "Another host on the plains cannot reach the management port",
+          "from": "probe",
+          "open": ["http"],
+          "closed": ["management"]
+        },
+        {
+          "id": "citizens-cannot-manage",
+          "type": "ports",
+          "title": "The citizens cannot reach the management port",
+          "from": "citizens",
+          "open": ["http"],
+          "closed": ["management"]
+        }
+      ],
+      "hints": [
+        {
+          "level": 1,
+          "text": [
+            "A rule can care about where a packet comes from, not only where it is going.",
+            "Open the management port for one source and leave it closed for the rest."
+          ]
+        },
+        {
+          "level": 2,
+          "when": "no-forward-chain",
+          "text": [
+            "The gate has no forward chain, so the defence from the last wave is gone.",
+            "Rebuild it first, then add the garrison."
+          ]
+        },
+        {
+          "level": 2,
+          "text": [
+            "Match on the source address with ip saddr.",
+            "A whole network as source is not one host: every host on the plains shares that network."
+          ]
+        },
+        {
+          "level": 3,
+          "text": [
+            "Add one rule to your forward chain, above nothing that would drop it first:",
+            "",
+            "    ip saddr ____ ip daddr {web} tcp dport ____ accept",
+            "",
+            "nft add rule inet gate forward ...   adds it without reloading the file"
+          ]
+        }
+      ]
+    },
+    {
+      "number": 3,
+      "title": "The swarm",
+      "kind": "traffic",
+      "xp": 100,
+      "briefing": [
+        "A flood of web requests is coming at the notice board. First from one host, then from another.",
+        "The board is small. Left alone, the flood takes it down for everyone.",
+        "",
+        "No single source may get more than 20 new connections a second through to {web}:{http}.",
+        "The citizens ask for a few pages a second and must hardly notice.",
+        "Everything from the earlier waves still has to hold.",
+        "",
+        "When you are ready: quest ready"
+      ],
+      "question": "Your limit counts per source address. What would an attacker with a thousand addresses do to it?",
+      "checks": [
+        {
+          "id": "swarm-is-held-back",
+          "type": "flood",
+          "title": "No source floods the board, and the citizens are still served",
+          "attackers": ["defias", "probe"],
+          "citizens": "citizens",
+          "maxPerSecond": 20,
+          "min": 0.95
+        }
+      ],
+      "hints": [
+        {
+          "level": 1,
+          "text": [
+            "Chasing addresses loses: block one and the flood comes from the next.",
+            "Limit how fast anyone may open connections, and count each source on its own."
+          ]
+        },
+        {
+          "level": 2,
+          "when": "no-rate-limit",
+          "text": [
+            "Nothing in your rules limits a rate yet.",
+            "nftables has a limit statement. Used alone it is one shared bucket for everybody, and the flood empties it for the citizens too.",
+            "To give every source its own bucket, keep the limit in a set that is filled as sources appear."
+          ]
+        },
+        {
+          "level": 2,
+          "text": [
+            "You have a limit. Check two things: is it per source address, and is it low enough?",
+            "A limit that is shared starves the citizens. A limit above 20 a second lets the flood through."
+          ]
+        },
+        {
+          "level": 3,
+          "text": [
+            "Inside the table, a set that fills itself:",
+            "",
+            "  set flood {",
+            "    type ipv4_addr",
+            "    flags dynamic",
+            "    timeout 30s",
+            "  }",
+            "",
+            "In the forward chain, above the rule that accepts the web port:",
+            "",
+            "    ip daddr {web} tcp dport {http} ct state new add @flood { ip saddr limit rate over ____/second burst ____ packets } drop"
+          ]
+        }
+      ]
+    }
+  ]
+}
