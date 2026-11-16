@@ -66,7 +66,7 @@ public sealed class FloodCheck(
 
     public async Task<CheckResult> RunAsync(CheckContext context, CancellationToken ct = default)
     {
-        var rates = new List<(string Role, double PerSecond)>();
+        var rates = new List<(string Role, double PerSecond, FloodReport Sent)>();
         var answered = 0;
 
         foreach (var attacker in attackerRoles)
@@ -80,9 +80,9 @@ public sealed class FloodCheck(
             var before = await context.ServedToAsync(address, ct);
             await Task.Delay(3500, ct);
             var after = await context.ServedToAsync(address, ct);
-            rates.Add((attacker, (after - before) / clock.Elapsed.TotalSeconds));
+            var perSecond = (after - before) / clock.Elapsed.TotalSeconds;
 
-            await flood;
+            rates.Add((attacker, perSecond, await flood));
             answered += await citizens;
         }
 
@@ -91,13 +91,16 @@ public sealed class FloodCheck(
         var worst = rates.Max(r => r.PerSecond);
         var passed = worst <= maxPerSecond && citizenRate >= minCitizenRate;
 
-        var summary = string.Join(", ", rates.Select(r =>
-            string.Create(CultureInfo.InvariantCulture, $"{r.Role} {r.PerSecond:0.0}/s")));
+        var summary = string.Join(", ", rates.Select(r => string.Create(CultureInfo.InvariantCulture,
+            $"{r.Role} {r.PerSecond:0.0}/s [sent {r.Sent.Sent}, answered {r.Sent.Answered}{r.Sent.Problem}]")));
         return new CheckResult(id, passed,
             $"got through: {summary} (max {maxPerSecond:0}/s); " +
             $"{citizensRole}: {answered}/{sent} answered (needs {minCitizenRate:P0})");
     }
 }
+
+/// <summary>What the flooding host itself saw: how much it sent and how much was answered.</summary>
+public sealed record FloodReport(int Sent, int Answered, string Problem);
 
 /// <summary>Scripted traffic, sent with standard tools from the lab's own hosts.</summary>
 internal static class Traffic
@@ -119,13 +122,22 @@ internal static class Traffic
     /// Evenly spaced on purpose: clumps would leave gaps in which a shared
     /// limit has refilled, and ordinary requests would slip through unharmed.
     /// </summary>
-    public static Task FloodAsync(CheckContext context, string fromRole, int seconds, CancellationToken ct)
+    public static async Task<FloodReport> FloodAsync(
+        CheckContext context, string fromRole, int seconds, CancellationToken ct)
     {
         var script =
             $"end=$(( $(date +%s) + {seconds} )); " +
             "while [ $(date +%s) -lt $end ]; do " +
-            $"curl -s -o /dev/null -m 1 http://{context.WebAddress}/ & sleep 0.02; " +
+            $"curl -s -o /dev/null -m 1 -w '%{{http_code}}\\n' http://{context.WebAddress}/ & sleep 0.02; " +
             "done; wait";
-        return context.ShellAsync(fromRole, script, ct);
+        var result = await context.ShellAsync(fromRole, script, ct);
+
+        var lines = result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var codes = lines.Where(l => l.Length == 3 && l.All(char.IsDigit)).ToList();
+        var other = lines.FirstOrDefault(l => !(l.Length == 3 && l.All(char.IsDigit)));
+        var problem = result.ExitCode != 0 || other is not null
+            ? $", exit {result.ExitCode}{(other is null ? "" : $": {other}")}"
+            : "";
+        return new FloodReport(codes.Count, codes.Count(c => c == "200"), problem);
     }
 }
