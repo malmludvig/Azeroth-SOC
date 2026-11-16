@@ -1,0 +1,115 @@
+using Game.Checks;
+using Game.Orchestration;
+
+/// <summary>
+/// The test of the checks themselves. For every wave it loads known defences
+/// into the gate, at least one right and three wrong, and requires the verdict
+/// to match. A check that passes a wrong defence teaches the wrong thing.
+/// </summary>
+internal static class SelfTest
+{
+    private sealed record Defence(int Wave, string Name, bool ShouldPass, string Rules);
+
+    private const string Open = "table inet gate {\n  chain forward {\n    type filter hook forward priority 0; ";
+    private const string Close = "\n  }\n}\n";
+    private const string Established = "ct state established,related accept";
+    private const string Board = "ip daddr {WEB} tcp dport {HTTP} accept";
+    private const string Management = "ip saddr {GARRISON} ip daddr {WEB} tcp dport {MGMT} accept";
+
+    private static string Deny(params string[] rules) =>
+        Open + "policy drop;\n    " + string.Join("\n    ", rules) + Close;
+
+    private static string PerSource(int rate, params string[] rules) =>
+        "table inet gate {\n  set flood {\n    type ipv4_addr\n    flags dynamic\n    timeout 30s\n  }\n" +
+        "  chain forward {\n    type filter hook forward priority 0; policy drop;\n    " +
+        string.Join("\n    ", rules.Prepend(
+            $"ip daddr {{WEB}} tcp dport {{HTTP}} ct state new add @flood {{ ip saddr limit rate over {rate}/second burst {rate} packets }} drop")
+            .Prepend(Established)) + Close;
+
+    private static readonly Defence[] Defences =
+    [
+        new(1, "default deny, board open", true, Deny(Established, Board)),
+        new(1, "policy accept with explicit drops", true,
+            Open + "policy accept;\n    ip daddr {WEB} tcp dport != {HTTP} ct state new drop" + Close),
+        new(1, "no rules at all", false, ""),
+        new(1, "everything blocked", false, Deny()),
+        new(1, "no rule for established flows", false, Deny(Board)),
+        new(1, "debug page left open", false, Deny(Established, "ip daddr {WEB} tcp dport { {HTTP}, {DEBUG} } accept")),
+
+        new(2, "management from garrison only", true, Deny(Established, Management, Board)),
+        new(2, "management not opened", false, Deny(Established, Board)),
+        new(2, "management open to everyone", false,
+            Deny(Established, "ip daddr {WEB} tcp dport {MGMT} accept", Board)),
+        new(2, "management open to the whole plains", false,
+            Deny(Established, "ip saddr {PLAINS} ip daddr {WEB} tcp dport {MGMT} accept", Board)),
+        new(2, "management right, board closed", false, Deny(Established, Management)),
+
+        new(3, "limit per source address", true, PerSource(10, Management, Board)),
+        new(3, "no rate limit", false, Deny(Established, Management, Board)),
+        new(3, "block list with one address", false,
+            Deny(Established, "ip saddr {DEFIAS} drop", Management, Board)),
+        new(3, "one limit shared by everyone", false,
+            Deny(Established, Management,
+                "ip daddr {WEB} tcp dport {HTTP} ct state new limit rate over 15/second burst 5 packets drop", Board)),
+        new(3, "limit per source far too generous", false, PerSource(100, Management, Board)),
+    ];
+
+    public static async Task<int> RunAsync(DockerEngine docker, LabOrchestrator lab)
+    {
+        if ((await lab.ListAsync()).Count > 0)
+        {
+            Console.Error.WriteLine("A lab is already running. Remove it first: down");
+            return 1;
+        }
+
+        var run = await lab.UpAsync(SentinelHill.Create(Random.Shared.Next()));
+        Console.WriteLine($"Run {run.RunId}  seed {run.Spec.Seed}  networks {run.Driver}");
+        var context = new CheckContext(docker, run);
+        var wrong = 0;
+
+        try
+        {
+            foreach (var defence in Defences)
+            {
+                await LoadAsync(docker, run, context, defence.Rules);
+                var verdict = await SentinelHillChecks.JudgeAsync(defence.Wave, context);
+                var agrees = verdict.Passed == defence.ShouldPass;
+                if (!agrees) wrong++;
+
+                Console.WriteLine(
+                    $"{(agrees ? "ok   " : "WRONG")}  wave {defence.Wave}  " +
+                    $"{(defence.ShouldPass ? "right" : "wrong")} defence judged " +
+                    $"{(verdict.Passed ? "PASS" : "FAIL")}  {defence.Name}");
+                foreach (var result in verdict.Results.Where(r => !r.Passed || !agrees))
+                    Console.WriteLine($"         {(result.Passed ? "pass" : "fail")}  {result.Id}: {result.Detail}");
+            }
+        }
+        finally
+        {
+            await lab.DownAsync(run.RunId);
+        }
+
+        Console.WriteLine(wrong == 0
+            ? $"Self-test passed: {Defences.Length} defences judged as expected."
+            : $"Self-test FAILED: {wrong} of {Defences.Length} defences judged wrongly.");
+        return wrong == 0 ? 0 : 1;
+    }
+
+    private static async Task LoadAsync(DockerEngine docker, LabRun run, CheckContext context, string rules)
+    {
+        var text = "flush ruleset\n" + rules
+            .Replace("{WEB}", context.WebAddress)
+            .Replace("{GARRISON}", context.AddressOf("garrison"))
+            .Replace("{DEFIAS}", context.AddressOf("defias"))
+            .Replace("{PLAINS}", run.Spec.Networks.First(n => n.Key == SentinelHill.Plains).Subnet)
+            .Replace("{HTTP}", context.Port("http").ToString())
+            .Replace("{MGMT}", context.Port("management").ToString())
+            .Replace("{DEBUG}", context.Port("debug").ToString());
+
+        var result = await docker.ExecAsync(
+            run.ContainerName("gate"),
+            ["sh", "-c", $"cat > /tmp/defence.nft <<'RULES'\n{text}\nRULES\nnft -f /tmp/defence.nft"]);
+        if (!result.Succeeded)
+            throw new LabException($"nft rejected a test defence: {result.Output.Trim()}\n{text}");
+    }
+}

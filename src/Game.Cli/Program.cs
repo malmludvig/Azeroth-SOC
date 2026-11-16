@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using Game.Checks;
 using Game.Orchestration;
 
 // Runs a lab without the game client.
@@ -9,6 +10,8 @@ using Game.Orchestration;
 //   down                        remove the current run
 //   sweep [--expired]           remove every lab run, or only those past their lifetime
 //   soak [N]                    up, reset, down N times and check that nothing is left behind
+//   check <wave>                judge the current run against a wave (1 to 3)
+//   selftest                    judge known right and wrong defences and require the expected verdicts
 
 var command = args.Length > 0 ? args[0] : "help";
 var options = args.Skip(1).ToArray();
@@ -26,8 +29,10 @@ try
         case "down": return await Down(lab);
         case "sweep": return await Sweep(lab, options);
         case "soak": return await Soak(lab, options);
+        case "check": return await Check(docker, lab, options);
+        case "selftest": return await SelfTest.RunAsync(docker, lab);
         default:
-            Console.WriteLine("Usage: Game.Cli up [--seed N] [--replace] | status | reset | down | sweep [--expired] | soak [N]");
+            Console.WriteLine("Usage: Game.Cli up [--seed N] [--replace] | status | reset | down | sweep [--expired] | soak [N] | check <wave> | selftest");
             return command == "help" ? 0 : 2;
     }
 }
@@ -145,6 +150,31 @@ static async Task<int> Soak(LabOrchestrator lab, string[] options)
 
     Console.WriteLine($"Soak passed: {rounds} round(s) of up, reset and down.");
     return 0;
+}
+
+static async Task<int> Check(DockerEngine docker, LabOrchestrator lab, string[] options)
+{
+    if (options.Length == 0 || !int.TryParse(options[0], out var wave)
+        || wave < SentinelHillChecks.FirstWave || wave > SentinelHillChecks.LastWave)
+    {
+        Console.Error.WriteLine($"Usage: check <wave>, where wave is {SentinelHillChecks.FirstWave} to {SentinelHillChecks.LastWave}.");
+        return 2;
+    }
+
+    var runs = await lab.ListAsync();
+    if (runs.Count == 0)
+    {
+        Console.Error.WriteLine("No lab is running. Use: up");
+        return 1;
+    }
+
+    var run = runs[0];
+    Console.WriteLine($"Gate: {(await GateState.ReadAsync(docker, run)).Describe()}");
+    var verdict = await SentinelHillChecks.JudgeAsync(wave, new CheckContext(docker, run));
+    foreach (var result in verdict.Results)
+        Console.WriteLine($"  {(result.Passed ? "PASS" : "FAIL")}  {result.Id}: {result.Detail}");
+    Console.WriteLine($"Wave {wave}: {(verdict.Passed ? "held" : "not held")}");
+    return verdict.Passed ? 0 : 1;
 }
 
 static void Print(LabRun run)

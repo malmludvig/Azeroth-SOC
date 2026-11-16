@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Game.Orchestration\Game.Orchestration.csproj" />
+    <ProjectReference Include="..\Game.Checks\Game.Checks.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

@@ -8,7 +8,8 @@ Planen har nio steg (se "Repostruktur och plan för fas 2" i designen). Gör ett
 
 - Steg 1, labbet för hand: klart. `lab/verify.sh` är kört på utvecklingsmaskinen (Windows 11, x86-64, Docker Desktop 29 med WSL 2, kärna 6.18) med macvlan-nät.
 - Steg 2, orkestreraren: klart, utom socket-proxyn som flyttas till steg 4. `Game.Cli soak 10` är grön på utvecklingsmaskinen med de riktiga avbilderna och macvlan.
-- Steg 3, målkontrollen: inte påbörjad.
+- Steg 3, målkontrollen: koden finns i `src/Game.Checks`. `Game.Cli selftest` dömer 16 kända försvar rätt mot Docker 29 på Linux med ersättningsavbilder och bridge-nät, tre körningar i rad. Återstår att köra den på utvecklingsmaskinen. Våg 0 (spelarens rapport) har ingen kontroll ännu; den hör till `quest`-kommandot i steg 5.
+- Steg 4, isoleringstester och socket-proxy: inte påbörjat.
 
 ## Stack
 
@@ -35,7 +36,9 @@ dotnet run --project src/Game.Cli -- status
 dotnet run --project src/Game.Cli -- reset    # samma frö, nytt tillstånd
 dotnet run --project src/Game.Cli -- down
 dotnet run --project src/Game.Cli -- sweep    # ta bort alla körningar (--expired: bara utgångna)
-dotnet run --project src/Game.Cli -- soak 10  # stegets test: tio varv utan kvarlämnade resurser
+dotnet run --project src/Game.Cli -- soak 10  # test av steg 2: tio varv utan kvarlämnade resurser
+dotnet run --project src/Game.Cli -- check 1  # döm den pågående körningen mot våg 1, 2 eller 3
+dotnet run --project src/Game.Cli -- selftest # test av steg 3: kända rätta och felaktiga försvar, tar drygt tre minuter
 ```
 
 ## Principer
@@ -63,6 +66,9 @@ Dessa är krav, inte riktlinjer. Ändra dem inte utan att fråga.
 - **Rutterna läggs till från värden** med `docker exec --privileged ... ip route` i `lab/up.sh`. Då behöver ingen annan container än `gate` `NET_ADMIN`. Orkestreraren i steg 2 ska göra samma sak.
 - **Egen Docker-klient i stället för Docker.DotNet.** `DockerEngine` talar direkt med Docker Engine API över socketen och har bara de anrop labbet behöver. Listan över anrop är densamma som en socket-proxy ska släppa igenom. Lägg inte till anrop utan att fråga.
 - **All status ligger i etiketter** på containrar och nät (`azeroth.lab`, `azeroth.run`, `azeroth.seed`, `azeroth.expires`). En körning är en ren funktion av scenario och frö och byggs om från etiketterna. Det finns ingen statusfil.
+- **Testerna är kommandon i `Game.Cli`** (`soak`, `selftest`), inte xunit-projekt. Nya kontroller ska få sina rätta och felaktiga försvar i `SelfTest.cs`.
+- **Floden i våg 3 kommer från två värdar i tur och ordning** (`defias`, sedan `probe`). Det ersätter designens adressbyte halvvägs och ger samma lektion: en spärrlista med en adress håller inte. Takten räknas i webbserverns logg efter den första sekunden, så att ett burst-utrymme inte räknas mot försvaret.
+- **Kontrollerna för Sentinel Hill ligger i kod** (`SentinelHillChecks.cs`) tills YAML-laddningen kommer i steg 5.
 - **Topologin för Sentinel Hill ligger i kod** (`SentinelHill.cs`) tills YAML-laddningen kommer i steg 5.
 - **En delad avbild för värdarna på slätten** (`lab/images/host`) tills trafikskripten kommer i steg 5.
 

@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Game.Checks/Game.Checks.csproj" />
     <Project Path="src/Game.Cli/Game.Cli.csproj" />
     <Project Path="src/Game.Orchestration/Game.Orchestration.csproj" />
   </Folder>

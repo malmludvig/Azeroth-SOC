@@ -2,7 +2,7 @@
 
 Ett personligt lärospel i nätverkssäkerhet. Du försvarar riktiga system i isolerade containrar med riktiga verktyg, och spelet dömer genom att skicka riktig trafik.
 
-Designen finns i [docs/design.md](docs/design.md). Projektet är i steg 2 av 9: labbet och orkestreraren finns, spelet är inte byggt ännu.
+Designen finns i [docs/design.md](docs/design.md). Projektet är i steg 3 av 9: labbet, orkestreraren och målkontrollen finns, spelet är inte byggt ännu.
 
 ## Prova labbet
 
@@ -21,6 +21,15 @@ Orkestreraren (steg 2) bygger samma labb med slumpade adresser och portar. Kräv
 lab/build.sh
 dotnet run --project src/Game.Cli -- up
 dotnet run --project src/Game.Cli -- soak 10
+dotnet run --project src/Game.Cli -- selftest
+```
+
+Skriv egna regler i porten och låt spelet döma dem:
+
+```bash
+dotnet run --project src/Game.Cli -- up
+docker exec -it azl-<id>-gate bash      # skriv dina nftables-regler här
+dotnet run --project src/Game.Cli -- check 1
 ```
 
 Topologin i det fasta labbet:
