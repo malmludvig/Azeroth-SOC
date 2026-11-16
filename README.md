@@ -6,7 +6,7 @@ Designen finns i [docs/design.md](docs/design.md). Projektet är i steg 1 av 9: 
 
 ## Prova labbet
 
-Kräver Docker med Compose.
+Kräver Docker med Compose och bash. På Windows: Docker Desktop med WSL 2, och kör kommandona i en WSL-terminal med repot i WSL:s eget filsystem.
 
 ```bash
 lab/up.sh        # bygg och starta

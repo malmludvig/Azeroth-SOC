@@ -13,7 +13,7 @@ Designen bygger på antagandena i högerkolumnen. Svara på frågorna så juster
 | 1 | Vilka är dina lärmål, i prioritetsordning? Siktar du på en certifiering? | Exempellistan gäller, i den här ordningen: brandväggar, segmentering, logganalys, IDS, incidenthantering, kryptografi. Ingen certifiering styr. |
 | 2 | Hur van är du vid Linux-terminalen och TCP/IP i dag? | Du klarar grundläggande shell och vet vad portar och IP-adresser är, men har inte skrivit brandväggsregler för hand. |
 | 3 | nftables eller iptables som huvudverktyg? | nftables. Det är standard i moderna distributioner och har JSON-utdata som gör målkontrollen enklare. |
-| 4 | Var ska spelet köras? | Utveckling på din MacBook (arm64), senare flytt till en egen Linux-VM i Proxmox. |
+| 4 | Var ska spelet köras? | Utveckling på din Windows 11-dator (x86-64, Docker Desktop med WSL 2), senare flytt till en egen Linux-VM i Proxmox. |
 | 5 | Vill du ha en värld att gå runt i, eller räcker en karta med uppdrag? | MVP:n har en skärm: zonkarta, uppdragslogg, terminal och status. En värld att gå runt i kommer först när kärnloopen är rolig. |
 
 Övriga antaganden:
@@ -251,7 +251,7 @@ azeroth-soc/
     Game.Checks.Tests/      kör mot riktiga containrar
 ```
 
-1. **Labbet för hand.** Bygg avbilderna och starta topologin med en compose-fil. Skriv reglerna själv och se att routing, nftables och tcpdump fungerar på din Mac. Klart när: du kan spärra port 22 i `gate` och se det från `probe`.
+1. **Labbet för hand.** Bygg avbilderna och starta topologin med en compose-fil. Skriv reglerna själv och se att routing, nftables och tcpdump fungerar på din dator. Klart när: du kan spärra port 22 i `gate` och se det från `probe`.
 2. **Orkestreraren.** Skapa, slumpa, återställ och städa via Docker.DotNet och socket-proxyn. Klart när: `Game.Cli up` och `Game.Cli reset` fungerar tio gånger i rad utan kvarlämnade resurser.
 3. **Målkontrollen med tester.** De tre kontrolltyperna, och för varje våg minst en rätt lösning som ska godkännas och tre felaktiga som ska underkännas. Klart när: testerna är gröna mot riktiga containrar.
 4. **Isoleringstester.** Automatiska tester som försöker nå internet, hemnätet och Docker-socketen inifrån varje container. Klart när: alla försök misslyckas.
@@ -273,11 +273,10 @@ Den största risken är en målkontroll som godkänner fel lösning, eftersom sp
 | Pedagogik | Du lär dig scenariot utantill i stället för färdigheten | Slumpade adresser, portar och angreppsordning. Senare scenarion kräver samma färdighet i ny miljö. |
 | Pedagogik | Ledtrådarna blir ett facit | Nivå 3 har luckor, kostar erfarenhet och släcker talangnoden. |
 | Pedagogik | Det blir en labb med fantasynamn och inget spel | Spela i terminalen efter steg 5. Trafiken på kartan och genomgången är det som ska bära känslan. |
-| Teknik | nftables i en container på Mac beror på kärnan i Docker-VM:en; moduler för rate limiting kan saknas | Verifiera i steg 1, innan någon kod skrivs. Faller det, utveckla mot Proxmox-VM:en från start. |
+| Teknik | nftables i en container på Windows beror på WSL 2-kärnan; moduler för rate limiting kan saknas | Verifiera i steg 1, innan någon kod skrivs. Faller det, utveckla mot Proxmox-VM:en från start. |
 | Teknik | Kärnloggning från regler når normalt inte ut ur en containers nätverksnamnrymd | Räkna med regelräknare och webbserverns logg. Logguppgifter läggs på Suricata i senare scenarion. |
 | Teknik | Mätningarna i våg 3 varierar med maskinens last, så samma försvar får olika betyg | Låg, fast anropstakt och hårda resursgränser på `web`. Marginal i trösklarna. Kör testerna 20 gånger och kräv samma utfall. |
 | Teknik | Du låser ute dig själv eller kontrollen med en regel | Terminalen går via `docker exec`, inte via nätet. Återställning är alltid ett klick bort. |
-| Teknik | Vissa färdiga sårbara labbmål finns bara för x86 | Berör inte MVP:n. Välj arm64-mål eller kör de scenariona i Proxmox. |
 | Säkerhet | Trafik läcker från labbnätet till hemnätet eller internet | `internal: true`, isoleringstester i steg 4, egen VM och eget VLAN med nekad utgående trafik. |
 | Säkerhet | `NET_ADMIN` ger mer makt än ett vanligt skal | Bara i `gate`, bara labbnät anslutna, inga andra capabilities, ingen värdnätverksdelning. |
 | Säkerhet | Backend styr Docker och är därmed root på värden | Socket-proxy med vitlista, backend bara på localhost, ingen annan tjänst i samma VM. |

@@ -6,7 +6,7 @@ Ett lärospel i nätverkssäkerhet för en spelare. Spelaren försvarar riktiga 
 
 Planen har nio steg (se "Repostruktur och plan för fas 2" i designen). Gör ett steg i taget och stanna när stegets "klart när" är uppfyllt.
 
-- Steg 1, labbet för hand: filerna finns i `lab/`. Skriptlogiken är körd mot Docker 29 på Linux. Återstår att köra `lab/up.sh` och `lab/verify.sh` på utvecklingsmaskinen (macOS, arm64, Docker Desktop).
+- Steg 1, labbet för hand: filerna finns i `lab/`. Skriptlogiken är körd mot Docker 29 på Linux. Återstår att köra `lab/up.sh` och `lab/verify.sh` på utvecklingsmaskinen (Windows 11, x86-64, Docker Desktop med WSL 2).
 - Steg 2 och framåt: inte påbörjade. Ingen .NET-kod finns ännu.
 
 ## Stack
@@ -53,5 +53,6 @@ Dessa är krav, inte riktlinjer. Ändra dem inte utan att fråga.
 ## Konventioner
 
 - Dokumentation på svenska. Kod, kommentarer, identifierare och skriptutskrifter på engelska.
-- Skalskript ska fungera i bash 3.2 (macOS).
+- Utvecklingsmaskinen är Windows 11. Repot ska ligga i WSL 2:s eget filsystem (inte under `/mnt/c`) och alla skript körs i en WSL-terminal.
+- Skalskript skrivs för bash och ska ha LF-radslut (`.gitattributes` ser till det).
 - Containrar heter `azeroth-lab-<roll>-1`. Roller: `gate`, `web`, `citizens`, `garrison`, `defias`, `probe`.
