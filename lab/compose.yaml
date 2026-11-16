@@ -1,0 +1,98 @@
+# Sentinel Hill lab topology (plan step 1). Fixed addresses for now;
+# the orchestrator randomises them per run from step 2.
+#
+#   plains 10.10.0.0/24                         dmz 10.20.0.0/24
+#   citizens .10  garrison .20                  web .10
+#   defias   .66  probe    .99
+#                 \________ gate .2 | .2 ________/
+#
+# Both networks are internal: no route to the internet or the home network.
+# They use macvlan on a dummy parent rather than a bridge: on a Docker bridge
+# with "internal: true" the host firewall drops every packet whose address is
+# outside the bridge's own subnet, which is exactly what a router forwards.
+# LAB_NET_DRIVER=bridge is a fallback for hosts without macvlan; routing
+# through gate then only works if the host does not filter bridged traffic.
+#
+# Start with lab/up.sh, not "docker compose up": the routes through gate
+# are added from the host afterwards.
+
+name: azeroth-lab
+
+x-limits: &limits
+  mem_limit: 128m
+  pids_limit: 128
+  cpus: 0.5
+  security_opt:
+    - no-new-privileges:true
+  restart: "no"
+
+x-plains-host: &plains-host
+  <<: *limits
+  build: ./images/host
+  image: azeroth-lab/host
+  cap_drop: [ALL]
+
+services:
+  gate:
+    <<: *limits
+    build: ./images/gate
+    image: azeroth-lab/gate
+    hostname: gate
+    cap_drop: [ALL]
+    # NET_ADMIN for nftables and routing, NET_RAW for tcpdump and ping.
+    cap_add: [NET_ADMIN, NET_RAW]
+    sysctls:
+      net.ipv4.ip_forward: "1"
+    networks:
+      plains: { ipv4_address: 10.10.0.2 }
+      dmz: { ipv4_address: 10.20.0.2 }
+
+  web:
+    <<: *limits
+    build: ./images/web
+    image: azeroth-lab/web
+    hostname: web
+    # Deliberately small so the swarm in wave 3 hurts.
+    cpus: 0.25
+    pids_limit: 64
+    cap_drop: [NET_RAW, MKNOD, AUDIT_WRITE]
+    networks:
+      dmz: { ipv4_address: 10.20.0.10 }
+
+  citizens:
+    <<: *plains-host
+    hostname: citizens
+    networks:
+      plains: { ipv4_address: 10.10.0.10 }
+
+  garrison:
+    <<: *plains-host
+    hostname: garrison
+    networks:
+      plains: { ipv4_address: 10.10.0.20 }
+
+  defias:
+    <<: *plains-host
+    hostname: defias
+    networks:
+      plains: { ipv4_address: 10.10.0.66 }
+
+  probe:
+    <<: *plains-host
+    hostname: probe
+    networks:
+      plains: { ipv4_address: 10.10.0.99 }
+
+networks:
+  plains:
+    driver: ${LAB_NET_DRIVER:-macvlan}
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.10.0.0/24
+  dmz:
+    driver: ${LAB_NET_DRIVER:-macvlan}
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.20.0.0/24
