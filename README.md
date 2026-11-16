@@ -2,7 +2,7 @@
 
 Ett personligt lärospel i nätverkssäkerhet. Du försvarar riktiga system i isolerade containrar med riktiga verktyg, och spelet dömer genom att skicka riktig trafik.
 
-Designen finns i [docs/design.md](docs/design.md). Projektet är i steg 1 av 9: labbet finns, spelet är inte byggt ännu.
+Designen finns i [docs/design.md](docs/design.md). Projektet är i steg 2 av 9: labbet och orkestreraren finns, spelet är inte byggt ännu.
 
 ## Prova labbet
 
@@ -15,7 +15,15 @@ docker exec -it azeroth-lab-gate-1 bash    # skal i porten
 lab/down.sh      # stoppa och städa
 ```
 
-Topologin:
+Orkestreraren (steg 2) bygger samma labb med slumpade adresser och portar. Kräver .NET 10 SDK.
+
+```bash
+lab/build.sh
+dotnet run --project src/Game.Cli -- up
+dotnet run --project src/Game.Cli -- soak 10
+```
+
+Topologin i det fasta labbet:
 
 ```text
 plains 10.10.0.0/24                          dmz 10.20.0.0/24

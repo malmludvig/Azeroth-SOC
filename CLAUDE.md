@@ -7,11 +7,12 @@ Ett lärospel i nätverkssäkerhet för en spelare. Spelaren försvarar riktiga 
 Planen har nio steg (se "Repostruktur och plan för fas 2" i designen). Gör ett steg i taget och stanna när stegets "klart när" är uppfyllt.
 
 - Steg 1, labbet för hand: klart. `lab/verify.sh` är kört på utvecklingsmaskinen (Windows 11, x86-64, Docker Desktop 29 med WSL 2, kärna 6.18) med macvlan-nät.
-- Steg 2, orkestreraren: nästa steg. Ingen .NET-kod finns ännu.
+- Steg 2, orkestreraren: koden finns i `src/`. `Game.Cli soak 10` är grön mot Docker 29 på Linux med ersättningsavbilder och bridge-nät. Återstår att köra den på utvecklingsmaskinen med de riktiga avbilderna och macvlan. Socket-proxyn är inte gjord.
+- Steg 3, målkontrollen: inte påbörjad.
 
 ## Stack
 
-- Backend: ASP.NET Core, SignalR, Docker.DotNet. All spellogik ligger här.
+- .NET 10. Backend: ASP.NET Core, SignalR och en egen tunn Docker-klient (`DockerEngine`). All spellogik ligger här.
 - Klient: TypeScript, Phaser 3, xterm.js. Tunn, innehåller inga regler.
 - Lagring: SQLite.
 - Scenarion: YAML i `lab/scenarios/`. Tema: `themes/theme-wow.json`.
@@ -23,6 +24,18 @@ lab/up.sh       # bygg och starta labbet, lägg till rutterna genom gate
 lab/verify.sh   # kontrollera routing, nftables, rate limiting, tcpdump, isolering
 lab/down.sh     # stoppa och ta bort labbet
 docker exec -it azeroth-lab-gate-1 bash   # spelarens skal
+```
+
+Skripten ovan kör det fasta labbet från steg 1. Orkestreraren kör slumpade körningar:
+
+```bash
+lab/build.sh                                  # bygg avbilderna
+dotnet run --project src/Game.Cli -- up       # ny körning (--seed N, --replace)
+dotnet run --project src/Game.Cli -- status
+dotnet run --project src/Game.Cli -- reset    # samma frö, nytt tillstånd
+dotnet run --project src/Game.Cli -- down
+dotnet run --project src/Game.Cli -- sweep    # ta bort alla körningar (--expired: bara utgångna)
+dotnet run --project src/Game.Cli -- soak 10  # stegets test: tio varv utan kvarlämnade resurser
 ```
 
 ## Principer
@@ -40,7 +53,7 @@ Dessa är krav, inte riktlinjer. Ändra dem inte utan att fråga.
 - Labbnäten är `internal: true`. Ingen labbcontainer får nå internet, hemnätet eller Docker-socketen. `lab/verify.sh` kontrollerar det.
 - Bara `gate` har capabilities: `NET_ADMIN` och `NET_RAW`. Värdarna på slätten har inga. Aldrig `privileged: true` på en container.
 - `no-new-privileges` och gränser för CPU, minne och antal processer på alla containrar.
-- Angreppsverktyg finns bara i labbavbilderna och riktas bara mot labbets adressrymd (10.10.0.0/24 och 10.20.0.0/24).
+- Angreppsverktyg finns bara i labbavbilderna och riktas bara mot labbets adressrymd: 10.10.0.0/24 och 10.20.0.0/24 i det fasta labbet, 10.77.0.0/16 i orkestrerade körningar.
 - Backend ska nå Docker via en socket-proxy med vitlista och lyssna bara på localhost.
 
 ## Beslut som avviker från eller preciserar designen
@@ -48,6 +61,9 @@ Dessa är krav, inte riktlinjer. Ändra dem inte utan att fråga.
 - **Nätdrivrutin: macvlan, inte bridge.** På en Docker-bridge med `internal: true` släpper värdens brandvägg bara igenom paket där både käll- och måladress ligger i bryggans eget subnät, när värden filtrerar bryggad trafik. Routad trafik genom `gate` har alltid en adress utanför subnätet och tappas. Uppmätt på Docker 29, Linux. `lab/compose.yaml` använder därför macvlan på en dummy-förälder; `LAB_NET_DRIVER=bridge` är en reservväg och `lab/up.sh` faller tillbaka på den automatiskt.
 - **`gate` har `NET_RAW` utöver `NET_ADMIN`.** tcpdump och ping kräver det. Designen säger "`NET_ADMIN` och inget mer". Kör tcpdump utan `-Z`: flaggan får tcpdump att byta användare, vilket kräver capabilities som `gate` saknar.
 - **Rutterna läggs till från värden** med `docker exec --privileged ... ip route` i `lab/up.sh`. Då behöver ingen annan container än `gate` `NET_ADMIN`. Orkestreraren i steg 2 ska göra samma sak.
+- **Egen Docker-klient i stället för Docker.DotNet.** `DockerEngine` talar direkt med Docker Engine API över socketen och har bara de anrop labbet behöver. Listan över anrop är densamma som en socket-proxy ska släppa igenom. Lägg inte till anrop utan att fråga.
+- **All status ligger i etiketter** på containrar och nät (`azeroth.lab`, `azeroth.run`, `azeroth.seed`, `azeroth.expires`). En körning är en ren funktion av scenario och frö och byggs om från etiketterna. Det finns ingen statusfil.
+- **Topologin för Sentinel Hill ligger i kod** (`SentinelHill.cs`) tills YAML-laddningen kommer i steg 5.
 - **En delad avbild för värdarna på slätten** (`lab/images/host`) tills trafikskripten kommer i steg 5.
 
 ## Konventioner
@@ -55,4 +71,4 @@ Dessa är krav, inte riktlinjer. Ändra dem inte utan att fråga.
 - Dokumentation på svenska. Kod, kommentarer, identifierare och skriptutskrifter på engelska.
 - Utvecklingsmaskinen är Windows 11. Repot ska ligga i WSL 2:s eget filsystem (inte under `/mnt/c`) och alla skript körs i en WSL-terminal.
 - Skalskript skrivs för bash och ska ha LF-radslut (`.gitattributes` ser till det).
-- Containrar heter `azeroth-lab-<roll>-1`. Roller: `gate`, `web`, `citizens`, `garrison`, `defias`, `probe`.
+- Containrar heter `azeroth-lab-<roll>-1` i det fasta labbet och `azl-<körnings-id>-<roll>` i orkestrerade körningar. Roller: `gate`, `web`, `citizens`, `garrison`, `defias`, `probe`.
