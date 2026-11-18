@@ -14,6 +14,41 @@ public sealed class DockerException(HttpStatusCode status, string message)
     public HttpStatusCode Status { get; } = status;
 }
 
+/// <summary>A running terminal in a container.</summary>
+public sealed class TerminalConnection(
+    string execId, Stream stream, HttpRequestMessage request, HttpResponseMessage response) : IDisposable
+{
+    private readonly byte[] _header = new byte[8];
+
+    public string ExecId => execId;
+
+    public async Task WriteAsync(ReadOnlyMemory<byte> input, CancellationToken ct = default)
+    {
+        await stream.WriteAsync(input, ct);
+        await stream.FlushAsync(ct);
+    }
+
+    /// <summary>The next piece of output, or null when the shell has ended.</summary>
+    public async Task<byte[]?> ReadAsync(CancellationToken ct = default)
+    {
+        while (true)
+        {
+            if (!await DockerEngine.ReadExactlyOrEndAsync(stream, _header, ct)) return null;
+            var length = BinaryPrimitives.ReadInt32BigEndian(_header.AsSpan(4));
+            var payload = new byte[length];
+            if (!await DockerEngine.ReadExactlyOrEndAsync(stream, payload, ct)) return null;
+            if (length > 0) return payload;
+        }
+    }
+
+    public void Dispose()
+    {
+        stream.Dispose();
+        response.Dispose();
+        request.Dispose();
+    }
+}
+
 public sealed record ExecResult(int ExitCode, string Output)
 {
     public bool Succeeded => ExitCode == 0;
@@ -163,6 +198,54 @@ public sealed class DockerEngine : IDisposable
         return new ExecResult(exitCode, output);
     }
 
+    /// <summary>
+    /// Starts an interactive shell with a terminal in a container and returns the
+    /// two-way connection to it. Docker hands the connection over after an HTTP
+    /// upgrade; from then on it carries the terminal's input and output.
+    ///
+    /// The start request has no body, because an HTTP server may refuse a body on
+    /// an upgrade request, and the lab's Docker proxy does. Without a body Docker
+    /// frames the output the way it does for a command without a terminal, and
+    /// <see cref="TerminalConnection.ReadAsync"/> takes the frames apart.
+    /// </summary>
+    public async Task<TerminalConnection> OpenTerminalAsync(
+        string container, IReadOnlyList<string> command, IReadOnlyList<string> environment,
+        CancellationToken ct = default)
+    {
+        var create = new JsonObject
+        {
+            ["Cmd"] = new JsonArray(command.Select(c => (JsonNode)c).ToArray()),
+            ["Env"] = new JsonArray(environment.Select(e => (JsonNode)e).ToArray()),
+            ["AttachStdin"] = true,
+            ["AttachStdout"] = true,
+            ["AttachStderr"] = true,
+            ["Tty"] = true,
+            ["Privileged"] = false,
+            ["User"] = "0",
+        };
+        var exec = await PostAsync($"/containers/{container}/exec", create, ct);
+        var id = exec!["Id"]!.GetValue<string>();
+
+        var request = new HttpRequestMessage(HttpMethod.Post, $"{Api}/exec/{id}/start");
+        request.Headers.Connection.Add("Upgrade");
+        request.Headers.Upgrade.Add(new System.Net.Http.Headers.ProductHeaderValue("tcp"));
+
+        var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (response.StatusCode != HttpStatusCode.SwitchingProtocols)
+        {
+            using (request)
+            using (response)
+            {
+                await EnsureSuccessAsync(response, ct);
+                throw new DockerException(response.StatusCode, "Docker did not hand over the terminal connection.");
+            }
+        }
+        return new TerminalConnection(id, await response.Content.ReadAsStreamAsync(ct), request, response);
+    }
+
+    public Task ResizeTerminalAsync(string execId, int columns, int rows, CancellationToken ct = default) =>
+        PostAsync($"/exec/{execId}/resize?h={rows}&w={columns}", null, ct);
+
     // Without a TTY Docker frames the output: 1 byte stream id, 3 bytes padding,
     // 4 bytes big-endian length, then the payload.
     private static async Task<string> ReadMultiplexedAsync(Stream stream, CancellationToken ct)
@@ -179,7 +262,7 @@ public sealed class DockerEngine : IDisposable
         return Encoding.UTF8.GetString(output.ToArray());
     }
 
-    private static async Task<bool> ReadExactlyOrEndAsync(Stream stream, byte[] buffer, CancellationToken ct)
+    internal static async Task<bool> ReadExactlyOrEndAsync(Stream stream, byte[] buffer, CancellationToken ct)
     {
         var read = 0;
         while (read < buffer.Length)

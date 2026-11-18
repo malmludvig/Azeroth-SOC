@@ -15,6 +15,7 @@ using Game.Orchestration;
 //   selftest                    judge known right and wrong defences and require the expected verdicts
 //   play [--wave N] [--seed N]  play the scenario: you work in the gate, this terminal is the game master
 //   playtest                    play the whole scenario automatically and require the expected outcome
+//   termtest                    use the web terminal the way the browser does (needs src/Game.Api running)
 //   isolation                   try to get out of the lab from every container; every attempt must fail
 //   proxytest                   send forbidden requests to the Docker proxy; every one must be refused
 
@@ -38,10 +39,11 @@ try
         case "selftest": return await SelfTest.RunAsync(docker, lab);
         case "play": return await Play(docker, lab, options);
         case "playtest": return await PlayTest.RunAsync(docker, lab);
+        case "termtest": return await TermTest.RunAsync(lab);
         case "isolation": return await IsolationTest.RunAsync(docker, lab);
         case "proxytest": return await ProxyTest.RunAsync();
         default:
-            Console.WriteLine("Usage: Game.Cli up [--seed N] [--replace] | status | reset | down | sweep [--expired] | soak [N] | check <wave> | selftest | isolation | proxytest | play [--wave N] | playtest");
+            Console.WriteLine("Usage: Game.Cli up [--seed N] [--replace] | status | reset | down | sweep [--expired] | soak [N] | check <wave> | selftest | isolation | proxytest | play [--wave N] | playtest | termtest");
             return command == "help" ? 0 : 2;
     }
 }
@@ -213,6 +215,7 @@ static async Task<int> Play(DockerEngine docker, LabOrchestrator lab, string[] o
     Console.WriteLine();
     Console.WriteLine("Open a second terminal and step into the gate:");
     Console.WriteLine($"  docker exec -it {run.ContainerName("gate")} bash");
+    Console.WriteLine("Or, with src/Game.Api running, open http://127.0.0.1:5080 in your browser.");
     Console.WriteLine("Then type: quest");
     Console.WriteLine();
     Console.WriteLine("This terminal is the game master. Leave it running. Ctrl+C ends the game.");

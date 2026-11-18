@@ -99,6 +99,47 @@ internal static class ProxyTest
             await Refused("kill a lab container", HttpMethod.Post, $"/containers/{gate}/kill");
             await Refused("change a lab container's limits", HttpMethod.Post, $"/containers/{gate}/update",
                 new JsonObject { ["Memory"] = 0 });
+            await Refused("terminal in the web server", HttpMethod.Post, $"/containers/{run.ContainerName("web")}/exec",
+                Terminal("bash"));
+            await Refused("terminal running something other than a shell", HttpMethod.Post, $"/containers/{gate}/exec",
+                Terminal("sh", "-c", "id"));
+            await Refused("privileged terminal", HttpMethod.Post, $"/containers/{gate}/exec",
+                Terminal("bash").With("Privileged", true));
+            await Refused("resize an exec the proxy did not create", HttpMethod.Post, "/exec/0123456789abcdef/resize?h=24&w=80");
+
+            // A command exec the proxy did create must still not become a terminal.
+            using (var created = await http.PostAsync($"/v1.44/containers/{gate}/exec", JsonContent.Create(Exec(privileged: false, "id"))))
+            {
+                var id = JsonNode.Parse(await created.Content.ReadAsStringAsync())?["Id"]?.GetValue<string>() ?? "missing";
+                using var start = new HttpRequestMessage(HttpMethod.Post, $"/v1.44/exec/{id}/start");
+                start.Headers.Connection.Add("Upgrade");
+                start.Headers.Upgrade.Add(new System.Net.Http.Headers.ProductHeaderValue("tcp"));
+                using var response = await http.SendAsync(start, HttpCompletionOption.ResponseHeadersRead);
+                var ok = response.StatusCode == HttpStatusCode.Forbidden;
+                if (!ok) failures++;
+                Console.WriteLine($"  {(ok ? "PASS" : "FAIL")}  refused: start a command exec as a terminal{(ok ? "" : $" (got {(int)response.StatusCode})")}");
+            }
+
+            // The player's own shell in the gate is allowed, and works through the proxy.
+            using (var terminal = await throughProxy.OpenTerminalAsync(gate, ["bash"], ["TERM=xterm-256color"]))
+            {
+                await throughProxy.ResizeTerminalAsync(terminal.ExecId, 97, 31);
+                await terminal.WriteAsync(System.Text.Encoding.UTF8.GetBytes("stty size; echo proxied-$((6*7))\n"));
+                var seen = new System.Text.StringBuilder();
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                try
+                {
+                    while (!seen.ToString().Contains("proxied-42") && await terminal.ReadAsync(timeout.Token) is { } chunk)
+                        seen.Append(System.Text.Encoding.UTF8.GetString(chunk));
+                }
+                catch (OperationCanceledException)
+                {
+                    // Reported below.
+                }
+                var works = seen.ToString().Contains("proxied-42") && seen.ToString().Contains("31 97");
+                if (!works) failures++;
+                Console.WriteLine($"  {(works ? "PASS" : "FAIL")}  a terminal in the gate opens, resizes and runs commands through the proxy");
+            }
 
             failures += await OutsiderAsync(Refused);
         }
@@ -206,6 +247,12 @@ internal static class ProxyTest
         ["Privileged"] = privileged,
         ["User"] = "0",
     };
+
+    private static JsonObject Terminal(params string[] command) =>
+        Exec(privileged: false, command)
+            .With("AttachStdin", true)
+            .With("Tty", true)
+            .With("Env", new JsonArray("TERM=xterm-256color"));
 
     private static JsonObject With(this JsonObject json, string key, JsonNode value)
     {

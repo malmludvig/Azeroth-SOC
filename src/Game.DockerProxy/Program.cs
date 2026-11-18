@@ -1,4 +1,7 @@
 using System.Collections.Concurrent;
+using System.Net;
+using System.Net.Http.Headers;
+using Microsoft.AspNetCore.Http.Features;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
@@ -9,7 +12,8 @@ using System.Text.RegularExpressions;
 // calls the lab needs and checks what is inside them, so that whoever controls
 // the backend can build and judge labs but cannot use Docker to take over the
 // host: no privileged containers, no mounts, no containers outside the lab,
-// and a privileged exec only for adding a route inside the lab address pool.
+// a privileged exec only for adding a route inside the lab address pool, and
+// an interactive terminal only as a plain shell in the gate.
 //
 //   AZEROTH_PROXY_SOCKET     where to listen (default ~/.azeroth/docker-proxy.sock)
 //   AZEROTH_DOCKER_UPSTREAM  the real Docker socket (default /var/run/docker.sock)
@@ -70,6 +74,7 @@ app.Run();
 internal sealed partial class Proxy(HttpClient upstream)
 {
     private const string Api = "/v1.44";
+    // Execs created through the proxy, and whether each is a terminal.
     private readonly ConcurrentDictionary<string, bool> _execs = new();
 
     public async Task HandleAsync(HttpContext context)
@@ -81,8 +86,11 @@ internal sealed partial class Proxy(HttpClient upstream)
         try
         {
             JsonObject? body = null;
-            // A body may arrive chunked, without a length, so always read it.
-            if (method == "POST")
+            // A body may arrive chunked, without a length, so always read it. Not on
+            // an upgrade request: there the body is the upgraded connection itself.
+            var upgrade = context.Features.Get<IHttpUpgradeFeature>();
+            var upgrading = upgrade?.IsUpgradableRequest == true;
+            if (method == "POST" && !upgrading)
             {
                 using var reader = new StreamReader(request.Body, Encoding.UTF8);
                 var text = await reader.ReadToEndAsync(context.RequestAborted);
@@ -137,18 +145,36 @@ internal sealed partial class Proxy(HttpClient upstream)
             }
             else if (method == "POST" && (match = ContainerExec().Match(path)).Success)
             {
-                await RequireLabContainerAsync(match.Groups[1].Value, context.RequestAborted);
-                Policy.RequireExec(body);
+                var role = await RequireLabContainerAsync(match.Groups[1].Value, context.RequestAborted);
+                var terminal = Policy.RequireExec(body, role);
                 await ForwardAsync(context, HttpMethod.Post, path, body, created =>
                 {
-                    if (created?["Id"]?.GetValue<string>() is { } id) _execs[id] = true;
+                    if (created?["Id"]?.GetValue<string>() is { } id) _execs[id] = terminal;
                 });
             }
             else if (method == "POST" && (match = ExecStart().Match(path)).Success)
             {
-                RequireOwnExec(match.Groups[1].Value);
-                Policy.RequireExecStart(body);
-                await ForwardAsync(context, HttpMethod.Post, path, body);
+                var id = match.Groups[1].Value;
+                RequireOwnExec(id);
+                if (_execs[id])
+                {
+                    if (!upgrading || body is not null) throw new Denied("a terminal must be started as a connection upgrade without a body");
+                    await UpgradeAsync(context, upgrade!, path);
+                }
+                else
+                {
+                    if (upgrading) throw new Denied("only a terminal may be started as a connection upgrade");
+                    Policy.RequireExecStart(body);
+                    await ForwardAsync(context, HttpMethod.Post, path, body);
+                }
+            }
+            else if (method == "POST" && (match = ExecResize().Match(path)).Success)
+            {
+                var id = match.Groups[1].Value;
+                RequireOwnExec(id);
+                if (!_execs[id]) throw new Denied("only a terminal can be resized");
+                var (rows, columns) = Policy.RequireSize(request.Query["h"].ToString(), request.Query["w"].ToString());
+                await ForwardAsync(context, HttpMethod.Post, $"{path}?h={rows}&w={columns}");
             }
             else if (method == "GET" && (match = ExecInspect().Match(path)).Success)
             {
@@ -175,21 +201,53 @@ internal sealed partial class Proxy(HttpClient upstream)
         if (!_execs.ContainsKey(id)) throw new Denied("this exec was not created through the proxy");
     }
 
-    private Task RequireLabContainerAsync(string reference, CancellationToken ct) =>
-        RequireLabObjectAsync($"/containers/{reference}/json", "Config.Labels", ct);
+    /// <summary>Requires a lab container and returns its role, or null if it does not exist.</summary>
+    private async Task<string?> RequireLabContainerAsync(string reference, CancellationToken ct) =>
+        (await RequireLabObjectAsync($"/containers/{reference}/json", "Config.Labels", ct))?["azeroth.role"]?.GetValue<string>();
 
     // Only objects that carry the lab label may be touched. An object that does
     // not exist passes: Docker answers 404 itself and nothing is revealed.
-    private async Task RequireLabObjectAsync(string inspectPath, string labelsAt, CancellationToken ct)
+    private async Task<JsonNode?> RequireLabObjectAsync(string inspectPath, string labelsAt, CancellationToken ct)
     {
         using var response = await upstream.GetAsync(Api + inspectPath, ct);
-        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return;
+        if (response.StatusCode == HttpStatusCode.NotFound) return null;
         if (!response.IsSuccessStatusCode) throw new Denied("the object could not be inspected");
 
         JsonNode? node = JsonNode.Parse(await response.Content.ReadAsStringAsync(ct));
         foreach (var part in labelsAt.Split('.')) node = node?[part];
         if (node?[Policy.LabLabel]?.GetValue<string>() != "1")
             throw new Denied("the object does not belong to the lab");
+        return node;
+    }
+
+    // A terminal: ask Docker for the upgrade first, and only when it agrees hand
+    // the client its upgraded connection. Then pass bytes both ways until either
+    // side closes.
+    private async Task UpgradeAsync(HttpContext context, IHttpUpgradeFeature upgrade, string path)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, Api + path);
+        request.Headers.Connection.Add("Upgrade");
+        request.Headers.Upgrade.Add(new ProductHeaderValue("tcp"));
+        using var response = await upstream.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted);
+
+        if (response.StatusCode != HttpStatusCode.SwitchingProtocols)
+        {
+            context.Response.StatusCode = (int)response.StatusCode;
+            await context.Response.WriteAsync(await response.Content.ReadAsStringAsync(context.RequestAborted));
+            return;
+        }
+
+        await using var docker = await response.Content.ReadAsStreamAsync(context.RequestAborted);
+        context.Response.Headers.Upgrade = "tcp";
+        if (response.Content.Headers.ContentType is { } contentType)
+            context.Response.ContentType = contentType.ToString();
+        await using var client = await upgrade.UpgradeAsync();
+
+        using var done = new CancellationTokenSource();
+        var toDocker = client.CopyToAsync(docker, done.Token);
+        var toClient = docker.CopyToAsync(client, done.Token);
+        await Task.WhenAny(toDocker, toClient);
+        await done.CancelAsync();
     }
 
     private async Task ForwardAsync(
@@ -246,6 +304,9 @@ internal sealed partial class Proxy(HttpClient upstream)
 
     [GeneratedRegex(@"^/exec/([a-f0-9]+)/start$")]
     private static partial Regex ExecStart();
+
+    [GeneratedRegex(@"^/exec/([a-f0-9]+)/resize$")]
+    private static partial Regex ExecResize();
 
     [GeneratedRegex(@"^/exec/([a-f0-9]+)/json$")]
     private static partial Regex ExecInspect();

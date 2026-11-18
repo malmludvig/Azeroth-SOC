@@ -11,7 +11,8 @@ Planen har nio steg (se "Repostruktur och plan för fas 2" i designen). Gör ett
 - Steg 3, målkontrollen: klart. `Game.Cli selftest` dömer 16 kända försvar rätt på utvecklingsmaskinen med riktig nginx och macvlan, två körningar i rad med jämna mätvärden. Våg 0 (spelarens rapport) har ingen kontroll ännu; den hör till `quest`-kommandot i steg 5.
 - Steg 4, isoleringstester och socket-proxy: klart. `Game.Cli isolation` (49 kontroller) och `Game.Cli proxytest` (31 kontroller) är gröna på utvecklingsmaskinen med macvlan.
 - Steg 5, scenariomotorn: koden finns i `src/Game.Core`, scenariot i `lab/scenarios/sentinel-hill.json` och `quest`-kommandot i `gate`-avbilden. `Game.Cli playtest` spelar igenom hela scenariot mot Docker 29 på Linux med ersättningsavbilder och bridge-nät. Återstår att köra `playtest` på utvecklingsmaskinen och att spela scenariot för hand och avgöra om det är roligt.
-- Steg 6, terminalgatewayen: inte påbörjad.
+- Steg 6, terminalgatewayen: koden finns i `src/Game.Api` (webbsida med xterm.js och WebSocket till ett skal i `gate`). `Game.Cli termtest` är grön mot Docker 29 på Linux, både direkt och genom proxyn. Återstår att köra den på utvecklingsmaskinen och öppna sidan i en webbläsare.
+- Steg 7, klienten: inte påbörjad.
 
 ## Stack
 
@@ -43,6 +44,8 @@ dotnet run --project src/Game.Cli -- check 1  # döm den pågående körningen m
 dotnet run --project src/Game.Cli -- selftest # test av steg 3: kända rätta och felaktiga försvar, tar drygt tre minuter
 dotnet run --project src/Game.Cli -- play     # spela: den här terminalen är spelledare, spelaren sitter i gate och skriver quest
 dotnet run --project src/Game.Cli -- playtest # test av steg 5: automatisk genomspelning med fel försök och ledtrådar
+dotnet run --project src/Game.Api             # webbterminalen på http://127.0.0.1:5080 (egen terminal)
+dotnet run --project src/Game.Cli -- termtest # test av steg 6: använder webbterminalen som webbläsaren gör (kräver Game.Api)
 dotnet run --project src/Game.Cli -- isolation # test av steg 4: försök ta sig ut ur labbet från varje container
 dotnet run --project src/Game.DockerProxy     # starta Docker-proxyn (egen terminal)
 dotnet run --project src/Game.Cli -- proxytest # test av steg 4: förbjudna anrop mot proxyn ska nekas
@@ -85,6 +88,10 @@ Dessa är krav, inte riktlinjer. Ändra dem inte utan att fråga.
 - **`quest` talar med spelet genom filer i `/run/quest` i `gate`.** Porten har ingen nätväg till spelet. `quest` lämnar en begäran, spelledaren hämtar den utifrån med `docker exec` och lämnar ett svar. Inget spelet avgör vilar på de filerna: rapporten jämförs med facit och vågor döms av trafik.
 - **En våg är själva domen.** Trafiken i en våg är kontrollernas trafik, 10 till 25 sekunder. Det finns ingen separat fas där spelaren justerar under pågående attack; spelaren justerar och ringer i klockan igen. Genomgången efter en våg är kontrollernas utfall och portens läge, inte en tidslinje från regelräknare.
 - **Poäng**: vågens grundpoäng, minus 20 per ledtrådsnivå och 10 per misslyckat försök, lägst 10. En våg är bemästrad om den hölls utan ledtråd. Framsteg sparas inte mellan körningar förrän i steg 8; `play --wave N` hoppar till en våg.
+- **Webbterminalen är ett skal per körning som lever kvar på servern.** Webbläsare kopplar till och från; de senaste 64 kB utdata spelas upp igen vid återanslutning, så en omladdning ger samma prompt och historik. Lämnar spelaren skalet (`exit`) startas ett nytt vid nästa anslutning.
+- **`Game.Api` lyssnar bara på 127.0.0.1 och kräver samma Origin på WebSocket-anslutningen.** Terminalen är ett root-skal i `gate`, så en sida från en annan webbplats får inte kunna öppna den genom spelarens webbläsare.
+- **Terminalen startas utan innehåll i begäran.** Kestrel, och därmed proxyn, nekar innehåll i en upgrade-begäran. Utan innehåll ramar Docker in utdata som för ett kommando utan terminal, och `TerminalConnection.ReadAsync` packar upp ramarna. Proxyn tillåter en terminal bara som `bash` i `gate`, utan privilegier, och bara upgrade för execs den själv skapat som terminaler.
+- **Sidan är vanlig JavaScript med xterm.js kopierat in i `wwwroot/vendor`** (MIT, oförändrat från npm). Inget byggsteg. TypeScript och Phaser kommer först med klienten i steg 7, om de behövs.
 - **En delad avbild för värdarna på slätten** (`lab/images/host`). Trafiken skickas med `docker exec` från `Game.Checks`.
 
 ## Konventioner

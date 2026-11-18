@@ -91,20 +91,47 @@ internal static partial class Policy
     }
 
     /// <summary>
+    /// Checks an exec and returns whether it is an interactive terminal.
+    ///
     /// A privileged exec is full control of the container and a way out of it,
     /// so only one exact command may use it: adding a route inside the pool.
+    /// A terminal is the player's own shell, so it may only be a plain,
+    /// unprivileged shell in the gate.
     /// </summary>
-    public static void RequireExec(JsonObject? body)
+    public static bool RequireExec(JsonObject? body, string? role)
     {
-        Require(body is not null && OnlyKeys(body, "Cmd", "AttachStdout", "AttachStderr", "Privileged", "User"),
+        Require(body is not null && OnlyKeys(body,
+                "Cmd", "AttachStdin", "AttachStdout", "AttachStderr", "Tty", "Env", "Privileged", "User"),
             "the exec has settings the lab does not use");
         var command = Strings(body!["Cmd"]);
         Require(command.Count > 0, "the exec has no command");
-        if (body["Privileged"]?.GetValue<bool>() != true) return;
+        var privileged = Flag(body["Privileged"]);
 
-        Require(command is ["ip", "route", "replace", _, "via", _]
-                && LabSubnet().IsMatch(command[3]) && LabAddress().IsMatch(command[5]),
-            "a privileged exec may only add a route inside the lab address pool");
+        if (Flag(body["Tty"]) || Flag(body["AttachStdin"]))
+        {
+            Require(role == "gate", "a terminal may only be opened in the gate");
+            Require(!privileged, "a terminal may not be privileged");
+            Require(command is ["bash"], "a terminal may only run a shell");
+            Require(Flag(body["Tty"]) && Flag(body["AttachStdin"]), "a terminal needs both a TTY and input");
+            Require(Strings(body["Env"]).All(e => TerminalVariable().IsMatch(e)), "the terminal has a variable the lab does not use");
+            return true;
+        }
+
+        Require(body["Env"] is null, "only a terminal may set variables");
+        if (privileged)
+        {
+            Require(command is ["ip", "route", "replace", _, "via", _]
+                    && LabSubnet().IsMatch(command[3]) && LabAddress().IsMatch(command[5]),
+                "a privileged exec may only add a route inside the lab address pool");
+        }
+        return false;
+    }
+
+    public static (int Rows, int Columns) RequireSize(string rows, string columns)
+    {
+        var valid = int.TryParse(rows, out var h) & int.TryParse(columns, out var w);
+        Require(valid && h is >= 1 and <= 200 && w is >= 1 and <= 500, "the terminal size is out of range");
+        return (h, w);
     }
 
     public static void RequireExecStart(JsonObject? body) =>
@@ -121,6 +148,9 @@ internal static partial class Policy
     }
 
     private static bool OnlyKeys(JsonObject json, params string[] allowed) => json.All(p => allowed.Contains(p.Key));
+
+    private static bool Flag(JsonNode? node) =>
+        node is JsonValue value && value.TryGetValue<bool>(out var flag) && flag;
 
     private static string Text(JsonNode? node) =>
         node is JsonValue value && value.TryGetValue<string>(out var text) ? text : "";
@@ -148,6 +178,9 @@ internal static partial class Policy
 
     [GeneratedRegex(@"^10\.77\.(25[0-5]|2[0-4]\d|1?\d?\d)\.(25[0-5]|2[0-4]\d|1?\d?\d)$")]
     private static partial Regex LabAddress();
+
+    [GeneratedRegex(@"^(TERM=[a-z0-9-]{1,32}|PS1=[^\x00-\x1f]{0,64})$")]
+    private static partial Regex TerminalVariable();
 
     [GeneratedRegex(@"^(DEBUG_PORT|DB_PORT)=\d{1,5}$")]
     private static partial Regex Variable();
