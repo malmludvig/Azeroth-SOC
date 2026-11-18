@@ -15,6 +15,7 @@ using Game.Orchestration;
 //   selftest                    judge known right and wrong defences and require the expected verdicts
 //   play [--wave N] [--seed N]  play the scenario: you work in the gate, this terminal is the game master
 //   playtest                    play the whole scenario automatically and require the expected outcome
+//   hosttest                    play through the game host behind the web page and check what it shows
 //   termtest                    use the web terminal the way the browser does (needs src/Game.Api running)
 //   isolation                   try to get out of the lab from every container; every attempt must fail
 //   proxytest                   send forbidden requests to the Docker proxy; every one must be refused
@@ -39,11 +40,12 @@ try
         case "selftest": return await SelfTest.RunAsync(docker, lab);
         case "play": return await Play(docker, lab, options);
         case "playtest": return await PlayTest.RunAsync(docker, lab);
+        case "hosttest": return await HostTest.RunAsync(docker, lab);
         case "termtest": return await TermTest.RunAsync(lab);
         case "isolation": return await IsolationTest.RunAsync(docker, lab);
         case "proxytest": return await ProxyTest.RunAsync();
         default:
-            Console.WriteLine("Usage: Game.Cli up [--seed N] [--replace] | status | reset | down | sweep [--expired] | soak [N] | check <wave> | selftest | isolation | proxytest | play [--wave N] | playtest | termtest");
+            Console.WriteLine("Usage: Game.Cli up [--seed N] [--replace] | status | reset | down | sweep [--expired] | soak [N] | check <wave> | selftest | isolation | proxytest | play [--wave N] | playtest | hosttest | termtest");
             return command == "help" ? 0 : 2;
     }
 }

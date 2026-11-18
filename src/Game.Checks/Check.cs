@@ -2,7 +2,12 @@ using Game.Orchestration;
 
 namespace Game.Checks;
 
-public sealed record CheckResult(string Id, bool Passed, string Detail);
+/// <summary>
+/// The verdict of one check. Measures carry the numbers behind it for display:
+/// forbidden-reached and allowed-blocked (ports), citizen-rate (0 to 1) and
+/// worst-rate (requests a second from the strongest attacker).
+/// </summary>
+public sealed record CheckResult(string Id, bool Passed, string Detail, IReadOnlyDictionary<string, double>? Measures = null);
 
 /// <summary>
 /// One judged condition of a wave. Checks judge behaviour: they send real

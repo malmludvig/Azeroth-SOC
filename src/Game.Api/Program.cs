@@ -1,31 +1,57 @@
+using Game.Api.Components;
+using Game.Core;
 using Game.Orchestration;
 
-// The game's web backend. For now it does one thing: it serves a page with a
-// terminal and connects that terminal to a shell in the gate of the running lab.
+// The game's web backend: the game screen (Blazor Server), the game master
+// behind it, and the terminal into the gate.
 //
 //   AZEROTH_API_URL  where to listen (default http://127.0.0.1:5080)
 //   DOCKER_HOST      Docker, or the lab's Docker proxy
+//   --start          begin a game right away (--wave N to start at a later wave)
 //
 // It listens on localhost only. The terminal is a root shell in the gate, so
 // nothing but the player's own browser should be able to reach it.
 
 var url = Environment.GetEnvironmentVariable("AZEROTH_API_URL") ?? "http://127.0.0.1:5080";
 
-var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
     Args = args,
     ContentRootPath = ContentRoot(),
 });
 builder.Logging.SetMinimumLevel(LogLevel.Warning);
+// Keys for Blazor's circuits stay on this machine; the warning about storing them unencrypted is noise here.
+builder.Logging.AddFilter("Microsoft.AspNetCore.DataProtection", LogLevel.Error);
 builder.WebHost.UseUrls(url);
+// Serve static web assets (blazor.web.js from its package) when run from the
+// build output in any environment, not only in Development.
+builder.WebHost.UseStaticWebAssets();
+builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddSingleton(_ => new DockerEngine());
-builder.Services.AddSingleton<TerminalHub>();
 builder.Services.AddSingleton(services => new LabOrchestrator(services.GetRequiredService<DockerEngine>()));
+builder.Services.AddSingleton<GameHost>();
+builder.Services.AddSingleton<TerminalHub>();
 
 var app = builder.Build();
-app.UseDefaultFiles();
-app.UseStaticFiles();
+
+// A browser reaches localhost for any page that asks it to. The game's live
+// connections (Blazor's and the terminal's) only accept the game's own page.
+app.Use(async (context, next) =>
+{
+    var path = context.Request.Path;
+    if ((path.StartsWithSegments("/_blazor") || path.StartsWithSegments("/terminal")) && !SameOrigin(context.Request))
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        return;
+    }
+    await next();
+});
+
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });
+app.UseAntiforgery();
+// Plain static files: MapStaticAssets answered compressed requests with empty
+// bodies when the app ran from the build output instead of a publish.
+app.UseStaticFiles();
 
 app.MapGet("/api/status", async (LabOrchestrator lab, CancellationToken ct) =>
 {
@@ -54,14 +80,6 @@ app.Map("/terminal", async (HttpContext context, LabOrchestrator lab, TerminalHu
         return;
     }
 
-    // A browser sends cookies and reaches localhost for any page that asks it
-    // to, so a page from somewhere else must not be able to open this shell.
-    if (!SameOrigin(context.Request))
-    {
-        context.Response.StatusCode = StatusCodes.Status403Forbidden;
-        return;
-    }
-
     var run = (await lab.ListAsync(context.RequestAborted)).FirstOrDefault();
     if (run is null || !run.IsRunning)
     {
@@ -81,17 +99,29 @@ app.Map("/terminal", async (HttpContext context, LabOrchestrator lab, TerminalHu
         await context.Response.WriteAsync($"The terminal could not be started: {e.Message}");
         return;
     }
+
     using var socket = await context.WebSockets.AcceptWebSocketAsync();
     await session.AttachAsync(socket, context.RequestAborted);
 });
 
-app.Lifetime.ApplicationStarted.Register(() => Console.WriteLine($"Open {url} in your browser."));
+app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
+
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    Console.WriteLine($"Open {url} in your browser.");
+    // --start begins a game right away, as if Start had been pressed; --wave N picks the first wave.
+    if (!args.Contains("--start")) return;
+    var at = Array.IndexOf(args, "--wave");
+    var wave = at >= 0 && at + 1 < args.Length && int.TryParse(args[at + 1], out var n) ? n : 0;
+    _ = app.Services.GetRequiredService<GameHost>().StartAsync(wave);
+});
+app.Lifetime.ApplicationStopping.Register(() => app.Services.GetRequiredService<GameHost>().StopAsync().GetAwaiter().GetResult());
 app.Run();
 
 static bool SameOrigin(HttpRequest request)
 {
     var origin = request.Headers.Origin.ToString();
-    if (origin.Length == 0) return true; // not a browser: a browser always sends Origin on a WebSocket
+    if (origin.Length == 0) return true; // not a browser: a browser always sends Origin on these requests
     return Uri.TryCreate(origin, UriKind.Absolute, out var uri)
         && string.Equals(uri.Authority, request.Host.Value, StringComparison.OrdinalIgnoreCase);
 }

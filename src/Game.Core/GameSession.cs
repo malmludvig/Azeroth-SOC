@@ -7,12 +7,29 @@ namespace Game.Core;
 /// <summary>How a wave went. Mastered means held without any hint.</summary>
 public sealed record WaveOutcome(int Wave, string Title, int Attempts, int HintsUsed, int Xp, bool Mastered);
 
+/// <summary>Something that happened in the game, for anyone showing it.</summary>
+public abstract record GameEvent;
+
+public sealed record WaveStarted(WaveSpec Wave, string Briefing) : GameEvent;
+
+public sealed record HintGiven(int Wave, int Level, string Text) : GameEvent;
+
+public sealed record JudgingStarted(int Wave, int Attempt) : GameEvent;
+
+/// <summary>A report or a wave was judged. Outcomes is empty for a report.</summary>
+public sealed record AttemptJudged(int Wave, int Attempt, bool Held, string Text, IReadOnlyList<CheckOutcome> Outcomes) : GameEvent;
+
+public sealed record WaveHeld(WaveOutcome Outcome, string Question) : GameEvent;
+
+public sealed record GameCompleted(IReadOnlyList<WaveOutcome> Outcomes, string Ending) : GameEvent;
+
 /// <summary>
 /// Plays a scenario against a running lab, wave by wave: publish the mission,
 /// answer the player's quest commands, judge when they ring the bell, and move
 /// on when the wave is held. The player works in the gate the whole time.
 /// </summary>
-public sealed class GameSession(DockerEngine docker, LabRun run, Scenario scenario, Action<string>? log = null)
+public sealed class GameSession(
+    DockerEngine docker, LabRun run, Scenario scenario, Action<string>? log = null, Action<GameEvent>? events = null)
 {
     public const int HintCost = 20;
     public const int RetryCost = 10;
@@ -22,6 +39,7 @@ public sealed class GameSession(DockerEngine docker, LabRun run, Scenario scenar
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(500);
 
     private readonly Action<string> _log = log ?? (_ => { });
+    private readonly Action<GameEvent> _events = events ?? (_ => { });
     private readonly GateMailbox _mailbox = new(docker, run);
     private readonly CheckContext _context = new(docker, run);
 
@@ -36,7 +54,9 @@ public sealed class GameSession(DockerEngine docker, LabRun run, Scenario scenar
         for (var i = 0; i < waves.Count; i++)
         {
             var wave = waves[i];
-            await _mailbox.PublishAsync(Briefing(wave), wave.Kind, ct);
+            var briefing = Briefing(wave);
+            await _mailbox.PublishAsync(briefing, wave.Kind, ct);
+            _events(new WaveStarted(wave, briefing));
             _log($"Wave {wave.Number}: {wave.Title}. Waiting for the player.");
 
             var (outcome, request, verdictText) = await PlayWaveAsync(wave, ct);
@@ -54,6 +74,8 @@ public sealed class GameSession(DockerEngine docker, LabRun run, Scenario scenar
             reply.AppendLine().AppendLine("To think about: " + wave.Question);
             reply.AppendLine().Append(last ? Ending(outcomes) : "The next mission is waiting: quest");
             await _mailbox.ReplyAsync(request, reply.ToString(), ct);
+            _events(new WaveHeld(outcome, Render([wave.Question])));
+            if (last) _events(new GameCompleted(outcomes, Ending(outcomes)));
 
             _log($"Wave {wave.Number} held after {outcome.Attempts} attempt(s) and {outcome.HintsUsed} hint(s): +{outcome.Xp} XP");
         }
@@ -81,12 +103,15 @@ public sealed class GameSession(DockerEngine docker, LabRun run, Scenario scenar
 
             string verdict;
             bool held;
+            IReadOnlyList<CheckOutcome> outcomes = [];
             switch (request.Verb)
             {
                 case "hint":
                     hints = Math.Min(hints + 1, HintLevels);
                     _log($"Wave {wave.Number}: hint {hints} asked for");
-                    await _mailbox.ReplyAsync(request, await HintAsync(wave, hints, ct), ct);
+                    var hint = await HintAsync(wave, hints, ct);
+                    await _mailbox.ReplyAsync(request, hint, ct);
+                    _events(new HintGiven(wave.Number, hints, hint));
                     continue;
 
                 case "report" when wave.Kind == WaveSpec.Report:
@@ -97,7 +122,8 @@ public sealed class GameSession(DockerEngine docker, LabRun run, Scenario scenar
                 case "ready" when wave.Kind == WaveSpec.Traffic:
                     attempts++;
                     _log($"Wave {wave.Number}: the bell rings, attempt {attempts}");
-                    (held, verdict) = await JudgeTrafficAsync(wave, ct);
+                    _events(new JudgingStarted(wave.Number, attempts));
+                    (held, verdict, outcomes) = await JudgeTrafficAsync(wave, ct);
                     break;
 
                 default:
@@ -107,6 +133,7 @@ public sealed class GameSession(DockerEngine docker, LabRun run, Scenario scenar
                     continue;
             }
 
+            _events(new AttemptJudged(wave.Number, attempts, held, verdict, outcomes));
             if (held)
             {
                 var xp = Math.Max(MinimumXp, wave.Xp - HintCost * hints - RetryCost * (attempts - 1));
@@ -118,7 +145,8 @@ public sealed class GameSession(DockerEngine docker, LabRun run, Scenario scenar
         }
     }
 
-    private async Task<(bool Held, string Text)> JudgeTrafficAsync(WaveSpec wave, CancellationToken ct)
+    private async Task<(bool Held, string Text, IReadOnlyList<CheckOutcome> Outcomes)> JudgeTrafficAsync(
+        WaveSpec wave, CancellationToken ct)
     {
         var verdict = await scenario.JudgeAsync(wave.Number, _context, ct);
         var text = new StringBuilder();
@@ -128,7 +156,7 @@ public sealed class GameSession(DockerEngine docker, LabRun run, Scenario scenar
             if (!outcome.Result.Passed) text.AppendLine($"         {outcome.Result.Detail}");
         }
         text.AppendLine($"The gate now: {(await GateState.ReadAsync(docker, run, ct)).Describe()}");
-        return (verdict.Passed, text.ToString());
+        return (verdict.Passed, text.ToString(), verdict.Outcomes);
     }
 
     // The report says which parts are wrong, never what the right answer is.

@@ -18,16 +18,24 @@ public sealed class PortsCheck(
         var open = await Task.WhenAll(names.Select(n => context.CanConnectAsync(fromRole, context.Port(n), ct)));
 
         var wrong = new List<string>();
+        int forbiddenReached = 0, allowedBlocked = 0;
         for (var i = 0; i < names.Count; i++)
         {
             var shouldBeOpen = i < expectOpen.Count;
             if (open[i] == shouldBeOpen) continue;
+            if (shouldBeOpen) allowedBlocked++;
+            else forbiddenReached++;
             wrong.Add($"{names[i]} ({context.Port(names[i])}) is {(open[i] ? "reachable" : "blocked")}");
         }
 
+        var measures = new Dictionary<string, double>
+        {
+            ["forbidden-reached"] = forbiddenReached,
+            ["allowed-blocked"] = allowedBlocked,
+        };
         return wrong.Count == 0
-            ? new CheckResult(id, true, $"from {fromRole}: as expected")
-            : new CheckResult(id, false, $"from {fromRole}: {string.Join(", ", wrong)}");
+            ? new CheckResult(id, true, $"from {fromRole}: as expected", measures)
+            : new CheckResult(id, false, $"from {fromRole}: {string.Join(", ", wrong)}", measures);
     }
 }
 
@@ -44,7 +52,8 @@ public sealed class SuccessRateCheck(string id, string fromRole, int requests, d
         var served = await Traffic.OrdinaryRequestsAsync(context, fromRole, requests, ct);
         var rate = (double)served / requests;
         return new CheckResult(id, rate >= minimum,
-            $"{fromRole}: {served}/{requests} requests answered (needs {minimum:P0})");
+            $"{fromRole}: {served}/{requests} requests answered (needs {minimum:P0})",
+            new Dictionary<string, double> { ["citizen-rate"] = rate });
     }
 }
 
@@ -108,7 +117,8 @@ public sealed class FloodCheck(
         return new CheckResult(id, passed,
             (conclusive ? "" : "INCONCLUSIVE, the flood was not as planned; ") +
             $"got through: {summary} (max {maxPerSecond:0}/s); " +
-            $"{citizensRole}: {answered}/{sent} answered (needs {minCitizenRate:P0})");
+            $"{citizensRole}: {answered}/{sent} answered (needs {minCitizenRate:P0})",
+            new Dictionary<string, double> { ["citizen-rate"] = citizenRate, ["worst-rate"] = worst });
     }
 }
 

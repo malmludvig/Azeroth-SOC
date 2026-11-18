@@ -1,0 +1,43 @@
+@* The player's shell in the gate. The terminal itself is xterm.js, started once
+   from terminal.js; Blazor never renders this component again, so it never
+   touches what xterm.js puts inside it. Keystrokes go over the /terminal
+   WebSocket, not through Blazor. *@
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<section class="terminal-panel">
+    <div class="panel-title">
+        <span>The gate</span>
+        <span class="terminal-status" @ref="_status">Connecting...</span>
+    </div>
+    <div class="terminal" @ref="_element"></div>
+</section>
+
+@code {
+    private ElementReference _element;
+    private ElementReference _status;
+    private IJSObjectReference? _module;
+
+    protected override bool ShouldRender() => false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _module = await JS.InvokeAsync<IJSObjectReference>("import", "./terminal.js");
+        await _module.InvokeVoidAsync("start", _element, _status);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is null) return;
+        try
+        {
+            await _module.InvokeVoidAsync("stop", _element);
+            await _module.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // The browser is already gone.
+        }
+    }
+}

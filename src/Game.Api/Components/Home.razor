@@ -1,0 +1,195 @@
+@page "/"
+@* The game screen: map and terminal on the left, the mission on the right.
+   Everything shown comes from the GameHost; this page only draws it and
+   starts or stops the game. *@
+@inject GameHost Game
+@implements IDisposable
+
+<div class="app">
+    <header>
+        <strong class="title">@(string.IsNullOrEmpty(_view.ScenarioTitle) ? "Azeroth SOC" : _view.ScenarioTitle)</strong>
+
+        <ol class="waves">
+            @foreach (var (number, title) in _view.Waves)
+            {
+                var done = _view.Outcomes.Any(o => o.Wave == number);
+                var current = _view.CurrentWave == number && _view.Phase != GamePhase.Completed;
+                <li class="@(done ? "done" : "") @(current ? "current" : "")" title="@title">@number</li>
+            }
+        </ol>
+
+        <span class="xp">@_view.TotalXp XP</span>
+
+        <span class="controls">
+            @if (_view.Active)
+            {
+                <span class="phase">@PhaseText</span>
+                <button class="secondary" @onclick="StopAsync" disabled="@_busy">Stop</button>
+            }
+            else
+            {
+                <label>
+                    Start at wave
+                    <select @bind="_firstWave">
+                        @foreach (var n in _waveChoices)
+                        {
+                            <option value="@n">@n</option>
+                        }
+                    </select>
+                </label>
+                <button @onclick="StartAsync" disabled="@_busy">@(_view.Phase == GamePhase.Idle ? "Start" : "Play again")</button>
+            }
+        </span>
+    </header>
+
+    <main>
+        <section class="left">
+            <ZoneMap View="_view" />
+            <GateTerminal />
+        </section>
+
+        <aside>
+            @if (_view.Error is { } error)
+            {
+                <div class="card error"><strong>Something went wrong</strong><p>@error</p></div>
+            }
+
+            <div class="card meters">
+                <div class="meter">
+                    <span class="label">Health of the town</span>
+                    @if (_view.Health is { } health)
+                    {
+                        <div class="bar"><div class="fill @HealthClass(health)" style="width:@Percent(health)"></div></div>
+                        <span class="value">@Percent(health)</span>
+                    }
+                    else
+                    {
+                        <span class="value muted">not measured yet</span>
+                    }
+                </div>
+                <div class="meter">
+                    <span class="label">Intrusions</span>
+                    @if (_view.Intrusions is { } intrusions)
+                    {
+                        <span class="value @(intrusions == 0 ? "good" : "bad")">@intrusions</span>
+                    }
+                    else
+                    {
+                        <span class="value muted">not measured yet</span>
+                    }
+                </div>
+                @if (_view.GateState is { } gate)
+                {
+                    <p class="gate-state">The gate now: @gate</p>
+                }
+            </div>
+
+            @if (_view.Phase == GamePhase.Completed)
+            {
+                <div class="card summary">
+                    <strong>Scenario complete: @_view.TotalXp XP</strong>
+                    <table>
+                        @foreach (var o in _view.Outcomes)
+                        {
+                            <tr>
+                                <td>Wave @o.Wave</td>
+                                <td>@o.Title</td>
+                                <td class="num">@o.Xp XP</td>
+                                <td>@(o.Mastered ? "mastered" : $"{o.HintsUsed} hint(s)")</td>
+                            </tr>
+                        }
+                    </table>
+                </div>
+            }
+
+            @if (_view.Briefing is { } briefing)
+            {
+                <div class="card mission">
+                    <pre>@briefing</pre>
+                </div>
+            }
+            else if (_view.Phase == GamePhase.Idle)
+            {
+                <div class="card mission">
+                    <p>Press <strong>Start</strong>. The lab is built, and the first mission appears here.</p>
+                    <p>You work in the terminal, as root in the gate. Type <code>quest</code> there for the mission,
+                        <code>quest hint</code> when stuck, and <code>quest ready</code> to ring the bell.</p>
+                </div>
+            }
+
+            @if (_view.Log.Count > 0)
+            {
+                <div class="card log">
+                    @foreach (var entry in _view.Log.Reverse())
+                    {
+                        <div class="entry @entry.Kind">
+                            <div class="entry-title"><span class="time">@entry.At.ToString("HH:mm")</span> @entry.Title</div>
+                            @if (entry.Text.Length > 0)
+                            {
+                                <pre>@entry.Text</pre>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </aside>
+    </main>
+</div>
+
+@code {
+    private GameView _view = GameView.Empty;
+    private int _firstWave;
+    private bool _busy;
+    private static readonly int[] _waveChoices = [0, 1, 2, 3];
+
+    protected override void OnInitialized()
+    {
+        _view = Game.View;
+        Game.Changed += OnChanged;
+    }
+
+    public void Dispose() => Game.Changed -= OnChanged;
+
+    private void OnChanged() => _ = InvokeAsync(() =>
+    {
+        _view = Game.View;
+        StateHasChanged();
+    });
+
+    private async Task StartAsync()
+    {
+        _busy = true;
+        try
+        {
+            await Game.StartAsync(_firstWave);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task StopAsync()
+    {
+        _busy = true;
+        try
+        {
+            await Game.StopAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private string PhaseText => _view.Phase switch
+    {
+        GamePhase.Building => "Building the lab...",
+        GamePhase.Judging => "The wave is coming...",
+        _ => $"Wave {_view.CurrentWave}",
+    };
+
+    private static string Percent(double value) => $"{Math.Round(value * 100):0}%";
+
+    private static string HealthClass(double value) => value >= 0.95 ? "good" : value >= 0.7 ? "warn" : "bad";
+}

@@ -12,12 +12,13 @@ Planen har nio steg (se "Repostruktur och plan för fas 2" i designen). Gör ett
 - Steg 4, isoleringstester och socket-proxy: klart. `Game.Cli isolation` (49 kontroller) och `Game.Cli proxytest` (31 kontroller) är gröna på utvecklingsmaskinen med macvlan.
 - Steg 5, scenariomotorn: klart. Spelat för hand på utvecklingsmaskinen, med `quest` i porten. `Game.Cli playtest` är grön mot Docker 29 på Linux.
 - Steg 6, terminalgatewayen: klart. Webbterminalen fungerar i webbläsaren i Windows mot labbet i WSL. `Game.Cli termtest` är grön mot Docker 29 på Linux, direkt och genom proxyn.
-- Steg 7, klienten: inte påbörjad.
+- Steg 7, klienten: koden finns i `src/Game.Api/Components` (Blazor Server) och `src/Game.Core/GameHost.cs` (spelledaren i webbservern). `Game.Cli hosttest` är grön mot Docker 29 på Linux, direkt och genom proxyn, och sidan är kontrollerad i Chrome i alla lägen utom det interaktiva: Blazors `blazor.web.js` kommer från ett NuGet-paket som inte går att hämta i Claudes arbetsmiljö. Återstår att öppna sidan på utvecklingsmaskinen och spela från knappen Start.
+- Steg 8, tema och historik: inte påbörjat.
 
 ## Stack
 
 - .NET 10. Backend: ASP.NET Core, SignalR och en egen tunn Docker-klient (`DockerEngine`). All spellogik ligger här.
-- Klient: TypeScript, Phaser 3, xterm.js. Tunn, innehåller inga regler.
+- Klient: Blazor Server i `Game.Api`, med xterm.js för terminalen. Sidan ritar bara `GameView` från `GameHost` och startar eller stoppar spelet; den innehåller inga regler.
 - Lagring: SQLite.
 - Scenarion: JSON i `lab/scenarios/`. Tema: `themes/theme-wow.json` (steg 8).
 
@@ -44,7 +45,8 @@ dotnet run --project src/Game.Cli -- check 1  # döm den pågående körningen m
 dotnet run --project src/Game.Cli -- selftest # test av steg 3: kända rätta och felaktiga försvar, tar drygt tre minuter
 dotnet run --project src/Game.Cli -- play     # spela: den här terminalen är spelledare, spelaren sitter i gate och skriver quest
 dotnet run --project src/Game.Cli -- playtest # test av steg 5: automatisk genomspelning med fel försök och ledtrådar
-dotnet run --project src/Game.Api             # webbterminalen på http://127.0.0.1:5080 (egen terminal)
+dotnet run --project src/Game.Api             # spelet i webbläsaren på http://127.0.0.1:5080 (egen terminal; --start [--wave N] startar direkt)
+dotnet run --project src/Game.Cli -- hosttest # test av steg 7: spelledaren bakom sidan, med quest i porten (inte samtidigt som Game.Api spelar)
 dotnet run --project src/Game.Cli -- termtest # test av steg 6: använder webbterminalen som webbläsaren gör (kräver Game.Api)
 dotnet run --project src/Game.Cli -- isolation # test av steg 4: försök ta sig ut ur labbet från varje container
 dotnet run --project src/Game.DockerProxy     # starta Docker-proxyn (egen terminal)
@@ -91,7 +93,12 @@ Dessa är krav, inte riktlinjer. Ändra dem inte utan att fråga.
 - **Webbterminalen är ett skal per körning som lever kvar på servern.** Webbläsare kopplar till och från; de senaste 64 kB utdata spelas upp igen vid återanslutning, så en omladdning ger samma prompt och historik. Lämnar spelaren skalet (`exit`) startas ett nytt vid nästa anslutning.
 - **`Game.Api` lyssnar bara på 127.0.0.1 och kräver samma Origin på WebSocket-anslutningen.** Terminalen är ett root-skal i `gate`, så en sida från en annan webbplats får inte kunna öppna den genom spelarens webbläsare.
 - **Terminalen startas utan innehåll i begäran.** Kestrel, och därmed proxyn, nekar innehåll i en upgrade-begäran. Utan innehåll ramar Docker in utdata som för ett kommando utan terminal, och `TerminalConnection.ReadAsync` packar upp ramarna. Proxyn tillåter en terminal bara som `bash` i `gate`, utan privilegier, och bara upgrade för execs den själv skapat som terminaler.
-- **Sidan är vanlig JavaScript med xterm.js kopierat in i `wwwroot/vendor`** (MIT, oförändrat från npm). Inget byggsteg. TypeScript och Phaser kommer först med klienten i steg 7, om de behövs.
+- **Klienten är Blazor Server, inte TypeScript och Phaser.** Spelledaren (`GameHost`) körs i webbservern och komponenterna läser dess `GameView` direkt. Zonkartan är SVG i en Razor-komponent. Terminalen är xterm.js, kopierat in i `wwwroot/vendor` (MIT, oförändrat från npm), och startas av `GateTerminal.razor` via `terminal.js`; tangenttryckningarna går över `/terminal`, inte genom Blazors anslutning.
+- **Bara en spelledare åt gången.** `Game.Cli play` och knappen Start i `Game.Api` är två spelledare som läser samma `quest`-filer. Kör inte båda mot samma labb.
+- **Dörrarna på kartan mäts levande** var tredje sekund mellan vågorna: kan `defias` nå varje port, och kan `garrison` nå förvaltningsporten. Inte under en våg, så att mätningarna inte störs, och inte i våg 0, där portarna är det spelaren ska ta reda på.
+- **Mätarna kommer från domens tal.** `CheckResult.Measures` bär `citizen-rate`, `forbidden-reached` och `worst-rate`. Stadens hälsa är den lägsta andelen betjänade invånare, intrång är antalet förbjudna dörrar som nåddes plus källor som flödade över gränsen.
+- **Statiska filer serveras med `UseStaticFiles` och `UseStaticWebAssets`, inte `MapStaticAssets`.** Körd direkt från byggmappen svarade `MapStaticAssets` med tomma filer när webbläsaren bad om komprimerade varianter.
+- **Blazor-paketet saknas i Claudes arbetsmiljö.** Där bygger `Game.Api` med en lokal `Directory.Build.targets` utanför repot som tar bort `Microsoft.AspNetCore.App.Internal.Assets`. Den ska aldrig in i repot; på utvecklingsmaskinen hämtas paketet från NuGet.
 - **En körning stannar när Docker startas om** och startar inte av sig själv (`RestartPolicy` är `no`). `LabRun.IsRunning` är falsk då; `status` säger det, `play` bygger om körningen med samma frö, och webbsidan visar att labbet är stoppat i stället för att försöka öppna en terminal.
 - **En delad avbild för värdarna på slätten** (`lab/images/host`). Trafiken skickas med `docker exec` från `Game.Checks`.
 
