@@ -33,33 +33,43 @@ main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1
 .left { min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); }
 aside { min-height: 0; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
 
-.map { width: 100%; max-height: 300px; padding: 8px 12px 0; display: block; }
-.map text { fill: var(--text); font-size: 13px; }
-.map .zone rect { fill: #151a12; stroke: var(--line); }
-.map .zone-title { fill: var(--muted); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; }
-.map .route { fill: none; stroke: #2f3729; stroke-width: 2; stroke-dasharray: 3 5; }
-.map .gate-opening { fill: #0d100c; stroke: #4b5540; }
-.map .gate.busy .gate-opening { stroke: var(--accent); }
-.map .gate-title { fill: var(--accent); font-size: 12px; }
-.map .host circle { stroke-width: 2; fill: #0d100c; }
-.map .host text { font-size: 12px; fill: var(--muted); }
-.map .citizens circle, .map .packet.citizens { stroke: var(--good); fill: var(--good); }
-.map .garrison circle, .map .packet.garrison { stroke: #6aa8d8; fill: #6aa8d8; }
-.map .raiders circle, .map .packet.raiders { stroke: var(--bad); fill: var(--bad); }
-.map .travellers circle, .map .packet.travellers { stroke: var(--warn); fill: var(--warn); }
-.map .host circle { fill-opacity: 0.18; }
-.map .board rect { fill: #1b2017; stroke: #4b5540; }
-.map .board-title { fill: var(--accent); }
-.map .hint-text { fill: var(--muted); }
-.map .door rect { stroke: none; }
-.map .door.good rect { fill: var(--good); }
-.map .door.warn rect { fill: var(--warn); }
-.map .door.bad rect { fill: var(--bad); }
-.map .door.shut rect { fill: #3a4232; }
-.map .door.unknown rect { fill: #2a2f24; }
-.map .door-state { fill: var(--muted); font-size: 11px; }
-.map .door.bad .door-state { fill: var(--bad); }
-.map .door.warn .door-state { fill: var(--warn); }
+.scene { padding: 8px 12px 0; }
+.map { width: 100%; max-height: 360px; display: block; border: 1px solid var(--line); border-radius: 8px; background: #141a2b; shape-rendering: crispEdges; image-rendering: pixelated; }
+.map text { shape-rendering: auto; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; }
+.map .zone { fill: #8d9ab8; font-size: 3.6px; letter-spacing: 0.6px; }
+.map .person { fill: #c8cdbf; font-size: 3.2px; }
+.map .sign { fill: #2a1c0c; font-size: 4px; font-weight: 700; }
+.map .door-label { fill: #c8cdbf; font-size: 3px; }
+.map .door.bad .door-label { fill: var(--bad); }
+.map .door.warn .door-label { fill: var(--warn); }
+.map .lamp { stroke: #2a1c0c; stroke-width: 0.6; }
+.map .door.good .lamp { fill: var(--good); filter: drop-shadow(0 0 1.5px var(--good)); }
+.map .door.bad .lamp { fill: var(--bad); filter: drop-shadow(0 0 1.5px var(--bad)); animation: alarm 1s steps(2) infinite; }
+.map .door.warn .lamp { fill: var(--warn); filter: drop-shadow(0 0 1.5px var(--warn)); }
+.map .door.shut .lamp { fill: #4a4d50; }
+.map .door.unknown .lamp { fill: #2a2d30; }
+.map .flame { fill: #f0a040; animation: flicker 0.6s steps(3) infinite; }
+.map .torches.bright .flame { fill: #ffd060; filter: drop-shadow(0 0 2px #ffb040); }
+.map .window { animation: glow 5s ease-in-out infinite; }
+.map .twinkle { animation: twinkle 3s steps(2) infinite; }
+.map .figure { animation: idle 1.6s steps(2) infinite; }
+.map .figure.garrison { animation-delay: 0.4s; }
+.map .figure.raiders { animation-delay: 0.8s; }
+.map .figure.travellers { animation-delay: 1.2s; }
+.map .flag { animation: wave 1.2s steps(2) infinite; }
+@keyframes flicker { 0% { opacity: 1; } 50% { opacity: 0.75; } 100% { opacity: 0.9; } }
+@keyframes glow { 0%, 100% { opacity: 1; } 50% { opacity: 0.8; } }
+@keyframes twinkle { 0% { opacity: 1; } 100% { opacity: 0.3; } }
+@keyframes idle { 0% { transform: translateY(0); } 100% { transform: translateY(-0.6px); } }
+@keyframes wave { 0% { transform: translateX(0); } 100% { transform: translateX(0.5px); } }
+@keyframes alarm { 0% { opacity: 1; } 100% { opacity: 0.45; } }
+.map-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 6px 4px 0; color: var(--muted); font-size: 12px; }
+.map-legend .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+.dot.good { background: var(--good); }
+.dot.bad { background: var(--bad); }
+.dot.warn { background: var(--warn); }
+.dot.shut { background: #4a4d50; }
+.dot.garrison { background: #3a5ea8; border-radius: 1px; }
 
 .terminal-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 8px 12px 12px; border: 1px solid var(--line); border-radius: 8px; background: #0d100c; }
 .panel-title { display: flex; justify-content: space-between; padding: 6px 12px; border-bottom: 1px solid var(--line); color: var(--accent); }

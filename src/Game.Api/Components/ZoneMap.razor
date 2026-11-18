@@ -1,113 +1,167 @@
-@* The zone map: the plains, the gate and the town, with the notice board's
-   doors as the hosts on the plains can see them right now. While a wave is
-   judged, traffic moves from the plains through the gate. *@
+@* The zone map as a pixel-art scene: the fields and their people on the left,
+   the wall and its gate in the middle, the town and the notice board's hall
+   on the right. The still parts come from PixelArt and are drawn once; this
+   component draws what changes: the gate, the doors as the hosts on the
+   plains can see them right now, and the traffic during a wave. *@
+@using System.Globalization
 
-<svg class="map" viewBox="0 0 760 262" role="img" aria-label="Zone map: the plains, the gate and the town">
-    <defs>
-        <pattern id="wall" width="12" height="12" patternUnits="userSpaceOnUse">
-            <rect width="12" height="12" fill="#2a2f24" />
-            <path d="M0 6H12M6 0V6M0 12V6" stroke="#3a4232" stroke-width="1.2" />
-        </pattern>
-    </defs>
+<div class="scene">
+    <svg class="map" viewBox="0 0 @PixelArt.Width @PixelArt.Height" role="img"
+         aria-label="@($"{Theme.Label("plains")}, the gate and {Theme.Label("town")}")">
+        @_background
 
-    <g class="zone">
-        <rect x="12" y="20" width="300" height="230" rx="10" />
-        <text x="26" y="44" class="zone-title">@Theme.Label("plains")</text>
-    </g>
-    <g class="zone">
-        <rect x="448" y="20" width="300" height="230" rx="10" />
-        <text x="462" y="44" class="zone-title">@Theme.Label("town")</text>
-    </g>
-
-    @foreach (var host in Hosts)
-    {
-        <path d="@Route(host)" class="route" />
-    }
-
-    <g class="gate @(View.Phase == GamePhase.Judging ? "busy" : "")">
-        <rect x="352" y="20" width="56" height="230" rx="4" fill="url(#wall)" />
-        <rect x="364" y="112" width="32" height="52" rx="14" class="gate-opening" />
-        <text x="380" y="40" text-anchor="middle" class="gate-title">@Theme.Label("gate")</text>
-    </g>
-
-    @foreach (var host in Hosts)
-    {
-        <g class="host @host.Kind">
-            <circle cx="@host.X" cy="@host.Y" r="13" />
-            <text x="@(host.X - 24)" y="@(host.Y + 5)" text-anchor="end">@Theme.Label(host.Kind)</text>
-        </g>
-    }
-
-    @if (View.Phase == GamePhase.Judging)
-    {
-        @foreach (var host in Hosts)
+        @* The gate: a lowered portcullis once the gate shuts what it should, an open arch before. *@
+        @if (PortcullisDown)
         {
-            @for (var i = 0; i < 3; i++)
+            <g class="portcullis">
+                @for (var x = PixelArt.GateX + 1; x < PixelArt.GateX + PixelArt.GateWidth; x += 2)
+                {
+                    <rect x="@x" y="72" width="1" height="@(PixelArt.Ground - 72)" fill="#8a8c90" />
+                }
+                <rect x="@PixelArt.GateX" y="78" width="@PixelArt.GateWidth" height="1" fill="#8a8c90" />
+                <rect x="@PixelArt.GateX" y="86" width="@PixelArt.GateWidth" height="1" fill="#8a8c90" />
+            </g>
+        }
+
+        <g class="torches @(View.Phase == GamePhase.Judging ? "bright" : "")">
+            <rect x="126" y="66" width="1" height="4" fill="#5a4030" />
+            <rect x="125.5" y="63" width="2" height="3" class="flame" />
+            <rect x="145" y="66" width="1" height="4" fill="#5a4030" />
+            <rect x="144.5" y="63" width="2" height="3" class="flame" />
+        </g>
+
+        @foreach (var (name, x) in PixelArt.Doors)
+        {
+            var door = View.Doors.FirstOrDefault(d => d.Name == name);
+            var (state, text) = Describe(door, Theme);
+            var open = door?.OutsidersReach == true;
+            <g class="door @state">
+                <title>@(door is null ? "Which doors answer? Find out from the gate." : $"{Name(name)} {door.Port}: {text}")</title>
+                <rect x="@(x - 1)" y="@(PixelArt.DoorTop - 1)" width="@(PixelArt.DoorWidth + 2)" height="@(PixelArt.Ground - PixelArt.DoorTop + 1)" fill="#3a2814" />
+                @if (open)
+                {
+                    <rect x="@x" y="@PixelArt.DoorTop" width="@PixelArt.DoorWidth" height="@(PixelArt.Ground - PixelArt.DoorTop)" fill="#0b0b09" />
+                    <rect x="@x" y="@(PixelArt.Ground - 3)" width="@PixelArt.DoorWidth" height="3" fill="#3a2e1a" />
+                    <rect x="@(x + PixelArt.DoorWidth - 2)" y="@PixelArt.DoorTop" width="2" height="@(PixelArt.Ground - PixelArt.DoorTop)" fill="#8a6a3e" />
+                }
+                else
+                {
+                    <rect x="@x" y="@PixelArt.DoorTop" width="@PixelArt.DoorWidth" height="@(PixelArt.Ground - PixelArt.DoorTop)" fill="#8a6a3e" />
+                    @for (var plank = x + 3; plank < x + PixelArt.DoorWidth; plank += 3)
+                    {
+                        <rect x="@plank" y="@PixelArt.DoorTop" width="1" height="@(PixelArt.Ground - PixelArt.DoorTop)" fill="#6b4f2c" />
+                    }
+                    <rect x="@(x + PixelArt.DoorWidth - 3)" y="84" width="1" height="2" fill="#2a2a2a" />
+                }
+                <circle cx="@(x + PixelArt.DoorWidth / 2.0)" cy="@(PixelArt.DoorTop - 5)" r="2" class="lamp" />
+                @if (door?.GarrisonReach == true)
+                {
+                    <rect x="@(x + PixelArt.DoorWidth + 2)" y="80" width="3" height="4" fill="#3a5ea8" />
+                    <rect x="@(x + PixelArt.DoorWidth + 3)" y="84" width="1" height="1" fill="#3a5ea8" />
+                }
+                <text x="@(x + PixelArt.DoorWidth / 2.0)" y="101.5" text-anchor="middle" class="door-label">@(door is null ? "?" : $"{Name(name)} {door.Port}")</text>
+            </g>
+        }
+
+        @if (View.Phase == GamePhase.Judging)
+        {
+            @foreach (var (kind, x) in PixelArt.People)
             {
-                <circle r="4" class="packet @host.Kind">
-                    <animateMotion dur="1.8s" begin="@($"{i * 0.6:0.0}s")" repeatCount="indefinite" path="@Route(host)" />
-                </circle>
+                var (target, passes) = Destination(kind);
+                var path = passes
+                    ? Invariant($"M{x} {PixelArt.Ground - 2} L{PixelArt.GateX + PixelArt.GateWidth / 2.0} {PixelArt.Ground - 2} L{target} {PixelArt.Ground - 2}")
+                    : Invariant($"M{x} {PixelArt.Ground - 2} L{PixelArt.GateX - 3} {PixelArt.Ground - 2}");
+                @for (var i = 0; i < 3; i++)
+                {
+                    <g class="walker">
+                        <rect x="-1" y="-3" width="2" height="3" fill="@PixelArt.TrafficColours[kind]" />
+                        <rect x="-1" y="-4" width="2" height="1" fill="#e0b48a" />
+                        @if (passes)
+                        {
+                            <animateMotion dur="2.4s" begin="@Invariant($"{i * 0.8 + Offset(kind)}s")" repeatCount="indefinite" path="@path" />
+                        }
+                        else
+                        {
+                            @* Turned back at the gate. *@
+                            <animateMotion dur="2.4s" begin="@Invariant($"{i * 0.8 + Offset(kind)}s")" repeatCount="indefinite" path="@path"
+                                           keyPoints="0;1;0" keyTimes="0;0.5;1" calcMode="linear" />
+                        }
+                    </g>
+                }
             }
         }
-    }
+    </svg>
 
-    <g class="board">
-        <rect x="470" y="58" width="258" height="176" rx="8" />
-        <text x="484" y="82" class="board-title">@Theme.Label("board")</text>
+    <div class="map-legend">
         @if (View.Doors.Count == 0)
         {
-            @* In a code block Razor reads a bare <text> as its own tag, so wrap it. *@
-            <g>
-                <text x="484" y="128" class="hint-text">Which doors answer?</text>
-                <text x="484" y="150" class="hint-text">Find out from the gate.</text>
-            </g>
+            <span>Which doors does the notice board answer on? Find out from the gate.</span>
         }
         else
         {
-            @for (var i = 0; i < View.Doors.Count; i++)
-            {
-                var door = View.Doors[i];
-                var y = 104 + i * 34;
-                var (state, text) = Describe(door, Theme);
-                <g class="door @state">
-                    <rect x="484" y="@(y - 12)" width="14" height="28" rx="2" />
-                    <text x="508" y="@y">@Name(door.Name) @door.Port</text>
-                    <text x="508" y="@(y + 14)" class="door-state">@text</text>
-                </g>
-            }
+            <span><i class="dot good"></i>open, as it should be</span>
+            <span><i class="dot bad"></i>open to @Theme.Label("raiders")</span>
+            <span><i class="dot shut"></i>shut</span>
+            <span><i class="dot warn"></i>@Theme.Label("citizens") shut out</span>
+            <span><i class="dot garrison"></i>@Theme.Label("garrison") gets in</span>
         }
-    </g>
-</svg>
+    </div>
+</div>
 
 @code {
     [Parameter, EditorRequired] public GameView View { get; set; } = GameView.Empty;
 
     [Parameter, EditorRequired] public Theme Theme { get; set; } = default!;
 
-    private sealed record Host(string Kind, int X, int Y);
+    private MarkupString _background;
 
-    // The kinds name the theme's labels; the roles behind them are citizens, garrison, defias and probe.
-    private static readonly Host[] Hosts =
-    [
-        new("citizens", 262, 76),
-        new("garrison", 262, 126),
-        new("raiders", 262, 176),
-        new("travellers", 262, 226),
-    ];
+    protected override void OnInitialized() => _background = new MarkupString(PixelArt.Background(Theme.Label));
 
-    // From the host's right edge, through the gate's opening, to the board.
-    private static string Route(Host host) => $"M{host.X + 13} {host.Y} C 330 {host.Y} 330 138 380 138 S 440 146 470 146";
+    // The portcullis is down once every door that should be shut to outsiders is.
+    private bool PortcullisDown =>
+        View.Doors.Count > 0 && View.Doors.Where(d => !d.Public).All(d => d.OutsidersReach == false);
+
+    // Where a kind's traffic goes during a wave, from the doors as last measured:
+    // raiders to the first forbidden door left open, the garrison to its
+    // management door, everyone else to the web door. Turned back if shut.
+    private (double Target, bool Passes) Destination(string kind)
+    {
+        double Centre(string name) => PixelArt.Doors.First(d => d.Name == name).X + PixelArt.DoorWidth / 2.0;
+        Door? Find(string name) => View.Doors.FirstOrDefault(d => d.Name == name);
+
+        switch (kind)
+        {
+            case "raiders":
+                var breach = View.Doors.FirstOrDefault(d => !d.Public && d.OutsidersReach == true);
+                return breach is not null ? (Centre(breach.Name), true) : (0, false);
+            case "garrison":
+                return (Centre("management"), Find("management")?.GarrisonReach != false);
+            default:
+                return (Centre("http"), Find("http")?.OutsidersReach != false);
+        }
+    }
+
+    private static double Offset(string kind) => kind switch
+    {
+        "citizens" => 0,
+        "garrison" => 0.3,
+        "raiders" => 0.15,
+        _ => 0.45,
+    };
+
+    private static string Invariant(FormattableString text) => text.ToString(CultureInfo.InvariantCulture);
 
     private static string Name(string name) => name switch
     {
         "http" => "web",
-        "debug" => "debug page",
+        "management" => "mgmt",
+        "database" => "db",
         _ => name,
     };
 
-    private static (string State, string Text) Describe(Door door, Theme theme)
+    private static (string State, string Text) Describe(Door? door, Theme theme)
     {
-        if (door.OutsidersReach is null) return ("unknown", "?");
+        if (door?.OutsidersReach is null) return ("unknown", "?");
         var reach = door.OutsidersReach.Value;
         var (state, text) = (door.Public, reach) switch
         {
