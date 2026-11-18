@@ -64,7 +64,11 @@ catch (DockerException e)
 }
 catch (HttpRequestException e)
 {
-    Console.Error.WriteLine($"Cannot reach Docker: {e.Message}");
+    var host = Environment.GetEnvironmentVariable("DOCKER_HOST");
+    Console.Error.WriteLine($"Cannot reach Docker at {(string.IsNullOrWhiteSpace(host) ? "unix:///var/run/docker.sock" : host)}: {e.Message}");
+    Console.Error.WriteLine(string.IsNullOrWhiteSpace(host)
+        ? "Is Docker Desktop running? Check with: docker version"
+        : "DOCKER_HOST is set. If it points at the lab's Docker proxy, start the proxy, or clear it with: unset DOCKER_HOST");
     return 1;
 }
 
