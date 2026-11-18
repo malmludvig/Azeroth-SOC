@@ -9,6 +9,10 @@
 <div class="app">
     <header>
         <strong class="title">@(string.IsNullOrEmpty(_view.ScenarioTitle) ? _scenario.Title : _view.ScenarioTitle)</strong>
+        <nav class="topnav">
+            <a class="active" href="">Play</a>
+            <a href="how-it-works">How it's built</a>
+        </nav>
 
         <ol class="waves">
             @foreach (var (number, title) in _view.Waves.Count > 0 ? _view.Waves : _scenario.Waves.OrderBy(w => w.Number).Select(w => (w.Number, w.Title)).ToList())
@@ -139,6 +143,8 @@
                     <p>Press <strong>Start</strong>. The lab is built, and the first mission appears here.</p>
                     <p>You work in the terminal, as root in the gate. Type <code>quest</code> there for the mission,
                         <code>quest hint</code> when stuck, and <code>quest ready</code> to ring the bell.</p>
+                    <p class="muted">Curious what is behind it? <a href="how-it-works">How it's built</a> explains the real
+                        containers, how a wave is judged and the system design.</p>
                 </div>
             }
 
@@ -198,12 +204,13 @@
     private Scenario _scenario = default!;
     private int _firstWave;
     private bool _busy;
-    private static readonly int[] _waveChoices = [0, 1, 2, 3];
+    private int[] _waveChoices = [];
 
     protected override void OnInitialized()
     {
         _view = Game.View;
         _scenario = Game.LoadScenario();
+        _waveChoices = _scenario.Waves.Select(w => w.Number).Order().ToArray();
         _firstWave = Game.History.SuggestedWave(_scenario);
         Game.Changed += OnChanged;
     }

@@ -1,0 +1,478 @@
+@page "/how-it-works"
+@* How the game is built: the lab, what happens when you play, how a wave is
+   judged, the system design and the technology. The tables of containers and
+   waves are read from the running lab and the scenario, not written by hand. *@
+@using Game.Orchestration
+@inject GameHost Game
+@inject LabOrchestrator Lab
+
+<div class="doc-page">
+    <header>
+        <a class="title" href="">@Game.Theme.Label("game")</a>
+        <nav class="topnav">
+            <a href="">Play</a>
+            <a class="active" href="how-it-works">How it's built</a>
+        </nav>
+    </header>
+
+    <div class="doc">
+        <nav class="doc-menu" aria-label="Contents">
+            <strong>How it's built</strong>
+            <ol>
+                @foreach (var (id, title) in Sections)
+                {
+                    <li><a href="how-it-works#@id">@title</a></li>
+                }
+            </ol>
+            <a class="back" href="">&larr; Back to the game</a>
+        </nav>
+
+        <article>
+            <section id="overview">
+                <h1>How Azeroth SOC is built</h1>
+                <p class="lead">
+                    Nothing in this game is simulated. When you press Start, the game builds a small network of
+                    real Linux containers on your machine. You get a root shell in one of them, the gate, and defend
+                    the others with the same tools you would use on a real router: <code>ip</code>, <code>ping</code>,
+                    <code>curl</code>, <code>tcpdump</code> and <code>nft</code>.
+                </p>
+                <p>
+                    When you ring the bell, the game does not read your rules. It sends real traffic from the other
+                    containers through your gate and measures what gets through. A wave is held when the right
+                    people get in and the wrong ones do not, however you wrote the rules.
+                </p>
+                <div class="facts">
+                    <div><span class="big">@(_run?.Spec.Nodes.Count ?? 6)</span> containers</div>
+                    <div><span class="big">2</span> isolated networks</div>
+                    <div><span class="big">@_scenario.Waves.Length</span> waves</div>
+                    <div><span class="big">0</span> simulated packets</div>
+                </div>
+            </section>
+
+            <section id="lab">
+                <h2>The lab: real containers</h2>
+                <p>
+                    The lab is two networks with the gate between them. On the left are the hosts that come from
+                    outside, on the right is the town with its notice board, a web server. Every packet from the
+                    plains to the board has to pass through the gate, so the gate is where you defend.
+                </p>
+
+                <svg class="diagram" viewBox="0 0 760 300" role="img" aria-label="The lab: two networks with the gate between them">
+                    <rect x="10" y="20" width="300" height="260" rx="10" class="net" />
+                    <g><text x="24" y="44" class="net-title">@Game.Theme.Label("plains")</text></g>
+                    <g><text x="24" y="62" class="mono dim">@Subnet(SentinelHill.Plains)</text></g>
+                    @for (var i = 0; i < PlainsRoles.Length; i++)
+                    {
+                        var role = PlainsRoles[i];
+                        var y = 80 + i * 48;
+                        <g class="@(role is "defias" or "probe" ? "host bad" : "host")">
+                            <rect x="30" y="@y" width="260" height="38" rx="6" />
+                            <text x="44" y="@(y + 16)" class="label">@RoleName(role)</text>
+                            <text x="44" y="@(y + 31)" class="mono dim">@Address(role, SentinelHill.Plains)</text>
+                            <text x="276" y="@(y + 24)" class="mono dim" text-anchor="end">@role</text>
+                        </g>
+                    }
+
+                    <rect x="330" y="105" width="100" height="90" rx="10" class="gate" />
+                    <g><text x="380" y="135" class="label" text-anchor="middle">@Game.Theme.Label("gate")</text></g>
+                    <g><text x="380" y="153" class="mono dim" text-anchor="middle">you are root</text></g>
+                    <g><text x="380" y="168" class="mono dim" text-anchor="middle">nftables</text></g>
+                    <g><text x="380" y="183" class="mono dim" text-anchor="middle">routes</text></g>
+                    <line x1="310" y1="150" x2="330" y2="150" class="wire" />
+                    <line x1="430" y1="150" x2="450" y2="150" class="wire" />
+                    <g><text x="380" y="214" class="mono tiny" text-anchor="middle">&larr; @Address("gate", SentinelHill.Plains)</text></g>
+                    <g><text x="380" y="230" class="mono tiny" text-anchor="middle">@Address("gate", SentinelHill.Dmz) &rarr;</text></g>
+
+                    <rect x="450" y="20" width="300" height="260" rx="10" class="net" />
+                    <g><text x="464" y="44" class="net-title">@Game.Theme.Label("town")</text></g>
+                    <g><text x="464" y="62" class="mono dim">@Subnet(SentinelHill.Dmz)</text></g>
+                    <rect x="470" y="80" width="260" height="180" rx="6" class="host board" />
+                    <g><text x="484" y="100" class="label">@Game.Theme.Label("board")</text></g>
+                    <g><text x="484" y="116" class="mono dim">@Address("web", SentinelHill.Dmz)  nginx</text></g>
+                    @for (var i = 0; i < Doors.Length; i++)
+                    {
+                        var (key, what, open) = Doors[i];
+                        var y = 132 + i * 30;
+                        <g class="@(open ? "door open" : "door")">
+                            <rect x="484" y="@y" width="232" height="24" rx="4" />
+                            <text x="494" y="@(y + 16)" class="mono">@Port(key)</text>
+                            <text x="560" y="@(y + 16)" class="small-label">@what</text>
+                        </g>
+                    }
+                </svg>
+                <p class="caption">
+                    @if (_run is not null)
+                    {
+                        <span>Drawn from the lab that is running now (run <code>@_run.RunId</code>, seed @_run.Spec.Seed).</span>
+                    }
+                    else
+                    {
+                        <span>No lab is running, so this is an example (seed 1). Every run draws new networks and ports from its seed.</span>
+                    }
+                    Green doors are meant for everyone; the others should stay shut to the outside.
+                </p>
+
+                <h3>Who lives in the lab</h3>
+                <table class="doc-table">
+                    <tr><th>Role</th><th>Name in this theme</th><th>What it does</th></tr>
+                    <tr><td><code>gate</code></td><td>@Game.Theme.Label("gate")</td><td>Your router and firewall. It forwards between the networks, and you have a root shell in it.</td></tr>
+                    <tr><td><code>web</code></td><td>@Game.Theme.Label("board")</td><td>nginx with the public notice board, plus doors that should not be public: SSH for management, a debug page and a database port.</td></tr>
+                    <tr><td><code>citizens</code></td><td>@RoleName("citizens")</td><td>Ordinary users. They must always be able to read the board.</td></tr>
+                    <tr><td><code>garrison</code></td><td>@RoleName("garrison")</td><td>The administrators. Only they may use the management door.</td></tr>
+                    <tr><td><code>defias</code></td><td>@RoleName("defias")</td><td>The attacker: scans, tries the forbidden doors, floods the board.</td></tr>
+                    <tr><td><code>probe</code></td><td>@RoleName("probe")</td><td>A second outsider. It takes over the flood halfway, so a block list with one address is not enough.</td></tr>
+                </table>
+
+                <h3>The containers right now</h3>
+                @if (_dockerError is not null)
+                {
+                    <p class="muted">Could not ask Docker: @_dockerError</p>
+                }
+                else if (_run is null)
+                {
+                    <p class="muted">No lab is running. Press Start in the game, then come back: this table then lists the real containers, read from Docker.</p>
+                }
+                else
+                {
+                    <p>Read from Docker when this page was opened. Each container has an image of its own, fixed limits and only the capabilities it needs.</p>
+                    <div class="table-wrap">
+                        <table class="doc-table mono-table">
+                            <tr><th>Container</th><th>Image</th><th>Addresses</th><th>Capabilities</th><th>Limits</th><th>State</th></tr>
+                            @foreach (var node in _run.Spec.Nodes)
+                            {
+                                var live = _run.Nodes.FirstOrDefault(n => n.Role == node.Role);
+                                <tr>
+                                    <td>@_run.ContainerName(node.Role)</td>
+                                    <td>@node.Image</td>
+                                    <td class="wrap">@string.Join(", ", node.Attachments.Select(a => a.Address))</td>
+                                    <td class="wrap">@(node.CapAdd.Count == 0 ? "none" : string.Join(", ", node.CapAdd))</td>
+                                    <td>@(node.MemoryBytes / 1024 / 1024) MB, @node.Cpus CPU, @node.PidsLimit pids</td>
+                                    <td class="@(live?.State == "running" ? "good" : "bad")">@(live?.State ?? "missing")</td>
+                                </tr>
+                            }
+                        </table>
+                    </div>
+                    <p class="muted small">Try it yourself in a WSL terminal: <code>docker ps --filter label=azeroth.run=@_run.RunId</code></p>
+                }
+            </section>
+
+            <section id="play">
+                <h2>What happens when you play</h2>
+                <ol class="steps">
+                    <li><strong>You press Start.</strong> The game master in the web server picks a seed. The seed decides
+                        everything random in the run: the networks, the addresses, the ports and the word of the day.</li>
+                    <li><strong>The lab is built.</strong> The orchestrator asks Docker for two internal networks and six
+                        containers, labels them all with the run id and the seed, and adds the routes through the gate.
+                        It waits until the citizens can reach the board.</li>
+                    <li><strong>The terminal opens.</strong> Your browser connects to the web server over a WebSocket, and
+                        the web server opens a <code>bash</code> in the gate through Docker. What you type goes straight to
+                        that shell.</li>
+                    <li><strong>You talk to the game with <code>quest</code>.</strong> The gate has no network path to the
+                        game. <code>quest</code> leaves a request in a file in <code>/run/quest</code>; the game master
+                        picks it up from outside with <code>docker exec</code> and writes the answer back.</li>
+                    <li><strong>You report or ring the bell.</strong> In a report wave you answer a question with
+                        <code>quest report key=value</code>. In a traffic wave you set up the gate and type
+                        <code>quest ready</code>, and the attack comes.</li>
+                    <li><strong>The wave is judged</strong> by measurement (see the next section). Held: you get XP and the
+                        next mission. Not held: you see what fell, adjust the gate and ring again.</li>
+                    <li><strong>Everything is saved</strong> in a history file, so the start page can show which skills you
+                        have and suggest where to practise next.</li>
+                </ol>
+
+                <h3>The waves</h3>
+                <table class="doc-table">
+                    <tr><th>Wave</th><th>Title</th><th>Skill</th><th>Judged by</th><th class="num">XP</th></tr>
+                    @foreach (var wave in _scenario.Waves.OrderBy(w => w.Number))
+                    {
+                        <tr>
+                            <td>@wave.Number</td>
+                            <td>@wave.Title</td>
+                            <td>@wave.Skill</td>
+                            <td>@(wave.Kind == WaveSpec.Traffic ? $"traffic, {wave.Checks?.Length ?? 0} check{(wave.Checks?.Length == 1 ? "" : "s")}" : "your report")</td>
+                            <td class="num">@wave.Xp</td>
+                        </tr>
+                    }
+                </table>
+                <p class="muted small">
+                    A held wave gives its XP minus 20 per hint and 10 per failed try, at least @GameSession.MinimumXp.
+                    It is mastered when it was held without hints. With cheat mode on, a wave gives @GameSession.MinimumXp XP.
+                </p>
+            </section>
+
+            <section id="judging">
+                <h2>How a wave is judged</h2>
+                <p>
+                    The rule of the game is <em>judge behaviour, not syntax</em>. The game never decides from the text of
+                    your rules whether they are right. It reads them only to give hints and to show the state of the
+                    gate.
+                </p>
+                <div class="two-col">
+                    <div class="card">
+                        <strong>Report waves</strong>
+                        <p>You find something out and report it, for example the gate's address or who is talking to the
+                            board. The report is compared with the true value of this run. A wrong report tells you which
+                            part is wrong, never what the right answer is.</p>
+                    </div>
+                    <div class="card">
+                        <strong>Traffic waves</strong>
+                        <p>Each check sends real traffic from the hosts on the plains and counts what is answered: can the
+                            citizens read the board, can an outsider reach a forbidden door, how fast does a flood get
+                            through.</p>
+                    </div>
+                </div>
+                <h3>Measurements you cannot fake</h3>
+                <ul>
+                    <li><strong>Measured where you have no shell.</strong> You are root in the gate, so nothing that decides
+                        a wave is measured there. Doors are tried from the plains, and the flood is counted in the web
+                        server's access log.</li>
+                    <li><strong>Counted, not timed by the clock.</strong> The clock in WSL can jump after Windows has slept,
+                        so the traffic scripts count requests and the game measures time with a stopwatch.</li>
+                    <li><strong>In doubt, not held.</strong> A measurement that did not go as planned is judged
+                        <code>INCONCLUSIVE</code>, which never counts as held.</li>
+                    <li><strong>Tested both ways.</strong> Every check is tested against real containers with at least one
+                        right defence that must pass and three wrong ones that must fail (<code>Game.Cli selftest</code>).</li>
+                </ul>
+                <p>
+                    The meters on the game screen come from the same numbers: the health of the town is the lowest share
+                    of citizens that were served, and intrusions are the forbidden doors that were reached plus the
+                    sources that flooded past the limit. Between waves the game also tries every door every three
+                    seconds and lights the lamps on the map.
+                </p>
+            </section>
+
+            <section id="design">
+                <h2>System design</h2>
+                <p>
+                    All game logic lives in C# on the server. The page only draws what the game master tells it and
+                    sends your clicks back; the terminal is a separate WebSocket straight to the shell in the gate.
+                </p>
+
+                <svg class="diagram" viewBox="0 0 760 470" role="img" aria-label="Components from the browser to the containers">
+                    <defs>
+                        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                            <path d="M0,0 L10,5 L0,10 z" class="arrowhead" />
+                        </marker>
+                    </defs>
+
+                    <g><text x="20" y="34" class="layer">Browser</text></g>
+                    <rect x="150" y="12" width="250" height="40" rx="6" class="box" />
+                    <g><text x="275" y="37" class="label" text-anchor="middle">Game page (Blazor)</text></g>
+                    <rect x="430" y="12" width="250" height="40" rx="6" class="box" />
+                    <g><text x="555" y="37" class="label" text-anchor="middle">Terminal (xterm.js)</text></g>
+
+                    <line x1="275" y1="52" x2="275" y2="88" class="flow" marker-start="url(#arrow)" marker-end="url(#arrow)" />
+                    <g><text x="283" y="74" class="mono tiny">SignalR</text></g>
+                    <line x1="555" y1="52" x2="555" y2="88" class="flow" marker-start="url(#arrow)" marker-end="url(#arrow)" />
+                    <g><text x="563" y="74" class="mono tiny">WebSocket /terminal</text></g>
+
+                    <g><text x="20" y="114" class="layer">Game.Api</text></g>
+                    <rect x="150" y="90" width="530" height="44" rx="6" class="box server" />
+                    <g><text x="275" y="117" class="label" text-anchor="middle">Razor components</text></g>
+                    <g><text x="555" y="117" class="label" text-anchor="middle">Terminal sessions</text></g>
+                    <g><text x="415" y="148" class="mono tiny" text-anchor="middle">ASP.NET Core on 127.0.0.1:5080</text></g>
+
+                    <line x1="275" y1="134" x2="275" y2="168" class="flow" marker-end="url(#arrow)" />
+
+                    <g><text x="20" y="196" class="layer">Game.Core</text></g>
+                    <rect x="150" y="170" width="250" height="56" rx="6" class="box core" />
+                    <g><text x="275" y="192" class="label" text-anchor="middle">GameHost</text></g>
+                    <g><text x="275" y="210" class="mono tiny" text-anchor="middle">GameSession, Scenario, Theme</text></g>
+                    <rect x="430" y="170" width="200" height="56" rx="6" class="box file" />
+                    <g><text x="530" y="190" class="label" text-anchor="middle">JSON files</text></g>
+                    <g><text x="530" y="207" class="mono tiny" text-anchor="middle">scenario, themes, history</text></g>
+                    <line x1="400" y1="198" x2="430" y2="198" class="flow" marker-end="url(#arrow)" />
+
+                    <line x1="220" y1="226" x2="220" y2="256" class="flow" marker-end="url(#arrow)" />
+                    <line x1="330" y1="226" x2="330" y2="256" class="flow" marker-end="url(#arrow)" />
+
+                    <g><text x="20" y="282" class="layer">Checks and lab</text></g>
+                    <rect x="150" y="258" width="140" height="44" rx="6" class="box core" />
+                    <g><text x="220" y="285" class="label" text-anchor="middle">Game.Checks</text></g>
+                    <rect x="300" y="258" width="380" height="44" rx="6" class="box core" />
+                    <g><text x="490" y="285" class="label" text-anchor="middle">Game.Orchestration: LabOrchestrator, DockerEngine</text></g>
+                    <line x1="290" y1="280" x2="300" y2="280" class="flow" marker-end="url(#arrow)" />
+                    <line x1="660" y1="134" x2="660" y2="256" class="flow dashed" marker-end="url(#arrow)" />
+                    <g><text x="652" y="246" class="mono tiny" text-anchor="end">docker exec</text></g>
+
+                    <line x1="350" y1="302" x2="350" y2="332" class="flow" marker-end="url(#arrow)" />
+                    <g><text x="358" y="322" class="mono tiny">Engine API, unix socket</text></g>
+                    <line x1="600" y1="302" x2="600" y2="332" class="flow dashed" marker-end="url(#arrow)" />
+                    <g><text x="608" y="322" class="mono tiny">or directly</text></g>
+
+                    <g><text x="20" y="360" class="layer">Docker</text></g>
+                    <rect x="150" y="334" width="250" height="44" rx="6" class="box guard" />
+                    <g><text x="275" y="355" class="label" text-anchor="middle">Game.DockerProxy</text></g>
+                    <g><text x="275" y="370" class="mono tiny" text-anchor="middle">allow list, inspects every call</text></g>
+                    <rect x="430" y="334" width="250" height="44" rx="6" class="box" />
+                    <g><text x="555" y="361" class="label" text-anchor="middle">Docker Engine</text></g>
+                    <line x1="400" y1="356" x2="430" y2="356" class="flow" marker-end="url(#arrow)" />
+
+                    <line x1="555" y1="378" x2="555" y2="408" class="flow" marker-end="url(#arrow)" />
+
+                    <g><text x="20" y="436" class="layer">Lab</text></g>
+                    <rect x="150" y="410" width="530" height="44" rx="6" class="box lab" />
+                    <g><text x="415" y="437" class="label" text-anchor="middle">gate, web, citizens, garrison, defias, probe</text></g>
+                </svg>
+                <p class="caption">
+                    The proxy sits between the game and Docker. On your machine it is optional; when the game moves to a
+                    server it is the only way the game can reach Docker.
+                </p>
+
+                <h3>The projects</h3>
+                <table class="doc-table">
+                    <tr><th>Project</th><th>Responsibility</th></tr>
+                    <tr><td><code>Game.Api</code></td><td>The web server: the Blazor page, the map, the terminal WebSocket. Draws the game, holds no rules.</td></tr>
+                    <tr><td><code>Game.Core</code></td><td>The game itself: the game master, waves, hints, scoring, cheat mode, themes and the history.</td></tr>
+                    <tr><td><code>Game.Checks</code></td><td>The checks that send traffic and measure: which doors answer, how many requests get through, how fast a flood is.</td></tr>
+                    <tr><td><code>Game.Orchestration</code></td><td>Builds and tears down runs. Its own small Docker client with exactly the calls the lab needs.</td></tr>
+                    <tr><td><code>Game.DockerProxy</code></td><td>A socket proxy that lets through only those calls, and only for the lab's images, names and addresses.</td></tr>
+                    <tr><td><code>Game.Cli</code></td><td>Commands for running the lab by hand, playing in a terminal, and every test.</td></tr>
+                </table>
+
+                <h3>Design decisions</h3>
+                <ul>
+                    <li><strong>No state file.</strong> A run is a pure function of the scenario and the seed. Everything
+                        Docker needs to know is in labels on the containers and networks, so a run can always be rebuilt
+                        from them.</li>
+                    <li><strong>Data, not code, decides the game.</strong> The waves, their checks and numbers, the hints
+                        and the answers are in <code>lab/scenarios/sentinel-hill.json</code>.</li>
+                    <li><strong>Theme and logic apart.</strong> A theme is a JSON file that replaces text only: titles,
+                        briefings and names. The game refuses a theme that would change what you have to do. The
+                        @Game.Theme.Name theme is in use now.</li>
+                    <li><strong>One game master at a time.</strong> The terminal game and the web page both read the same
+                        <code>quest</code> files, so only one of them may run a game.</li>
+                </ul>
+            </section>
+
+            <section id="safety">
+                <h2>Keeping the lab safe</h2>
+                <p>
+                    The lab contains real attack traffic and gives you a root shell, so it is locked in. These are hard
+                    requirements in the project, and there are tests for them.
+                </p>
+                <ul>
+                    <li><strong>Internal networks.</strong> No container can reach the internet, your home network or the
+                        Docker socket. The networks are macvlan on a dummy interface, marked internal.</li>
+                    <li><strong>Least privilege.</strong> Only the gate has extra capabilities, <code>NET_ADMIN</code> and
+                        <code>NET_RAW</code>, so that you can set rules and run <code>tcpdump</code> and <code>ping</code>.
+                        No container is ever privileged.</li>
+                    <li><strong>Limits everywhere.</strong> Every container has <code>no-new-privileges</code> and limits on
+                        memory, CPU and processes.</li>
+                    <li><strong>Attacks only inside the lab.</strong> The attack tools exist only in the lab images and
+                        are aimed only at the lab's own addresses in 10.77.0.0/16.</li>
+                    <li><strong>Routes from outside.</strong> The routes are added from the host with a privileged
+                        <code>ip route replace</code>, the only privileged command the proxy allows.</li>
+                    <li><strong>Only from this machine.</strong> The web server listens on 127.0.0.1 only, and the terminal
+                        refuses connections from pages on other sites.</li>
+                </ul>
+                <p class="muted small">Tested by <code>Game.Cli isolation</code>, which tries to get out of the lab from every
+                    container, and <code>Game.Cli proxytest</code>, which sends forbidden calls to the proxy.</p>
+            </section>
+
+            <section id="tech">
+                <h2>Technology</h2>
+                <table class="doc-table">
+                    <tr><th>Technology</th><th>Used for</th></tr>
+                    <tr><td>.NET 10 and C#</td><td>All game logic, the orchestrator, the checks, the proxy and the tests.</td></tr>
+                    <tr><td>ASP.NET Core (Kestrel)</td><td>The web server and the Docker proxy.</td></tr>
+                    <tr><td>Blazor Server and SignalR</td><td>The game page. The components run on the server and update the browser over SignalR.</td></tr>
+                    <tr><td>SVG pixel art</td><td>The map, 300 by 104 pixels, drawn in code. No images from other games.</td></tr>
+                    <tr><td>xterm.js</td><td>The terminal in the browser.</td></tr>
+                    <tr><td>Docker Engine API</td><td>Containers, networks and exec, spoken directly over the socket with a small client of our own.</td></tr>
+                    <tr><td>Docker Desktop on WSL 2</td><td>Runs the lab on Windows.</td></tr>
+                    <tr><td>Alpine Linux</td><td>The base of all three lab images: gate, web and the hosts on the plains.</td></tr>
+                    <tr><td>nftables, iproute2</td><td>Your firewall and routing in the gate.</td></tr>
+                    <tr><td>tcpdump, ping, curl, netcat</td><td>Your tools for seeing what happens on the network.</td></tr>
+                    <tr><td>nginx, socat, OpenSSH</td><td>The services on the notice board.</td></tr>
+                    <tr><td>curl, nmap, netcat</td><td>The scripted traffic from the plains: citizens, scans and floods.</td></tr>
+                    <tr><td>JSON</td><td>Scenario, themes and history (<code>~/.azeroth/history.json</code>).</td></tr>
+                </table>
+            </section>
+
+            <section id="repo">
+                <h2>The project</h2>
+                <pre class="tree">lab/
+  images/          the three lab images: gate, web, host
+  scenarios/       sentinel-hill.json: waves, checks, hints, answers
+themes/            theme-wow.json, theme-neutral.json
+src/
+  Game.Api/        web server, Blazor page, terminal
+  Game.Core/       game master, sessions, themes, history
+  Game.Checks/     traffic checks
+  Game.Orchestration/  runs and the Docker client
+  Game.DockerProxy/    the allow-list proxy
+  Game.Cli/        commands and tests
+docs/design.md     the full design</pre>
+                <h3>Useful commands</h3>
+                <pre class="tree">dotnet run --project src/Game.Cli -- status      # the running lab
+dotnet run --project src/Game.Cli -- history     # your progress per wave
+dotnet run --project src/Game.Cli -- playtest    # plays every wave by itself
+dotnet run --project src/Game.Cli -- selftest    # right and wrong defences
+docker exec -it azl-&lt;run&gt;-gate bash               # the gate, outside the browser</pre>
+                <p><a href="">&larr; Back to the game</a></p>
+            </section>
+        </article>
+    </div>
+</div>
+
+@code {
+    private static readonly (string Id, string Title)[] Sections =
+    [
+        ("overview", "Overview"),
+        ("lab", "The lab: real containers"),
+        ("play", "What happens when you play"),
+        ("judging", "How a wave is judged"),
+        ("design", "System design"),
+        ("safety", "Keeping the lab safe"),
+        ("tech", "Technology"),
+        ("repo", "The project"),
+    ];
+
+    private static readonly string[] PlainsRoles = ["citizens", "garrison", "defias", "probe"];
+
+    private static readonly (string Key, string What, bool Open)[] Doors =
+    [
+        ("web.http", "notice board, for everyone", true),
+        ("web.management", "SSH, garrison only", false),
+        ("web.debug", "debug page, nobody", false),
+        ("web.database", "database, nobody", false),
+    ];
+
+    private Scenario _scenario = default!;
+    private LabRun? _run;
+    // An example until the running lab, if any, has been read from Docker.
+    private LabSpec _spec = SentinelHill.Create(1);
+    private string? _dockerError;
+
+    protected override void OnInitialized() => _scenario = Game.LoadScenario();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var runs = await Lab.ListAsync(timeout.Token);
+            _run = runs.FirstOrDefault(r => r.RunId == Game.View.RunId) ?? runs.FirstOrDefault();
+        }
+        catch (Exception e) when (e is DockerException or LabException or HttpRequestException or IOException or OperationCanceledException
+                                     or System.Net.Sockets.SocketException)
+        {
+            _dockerError = e.Message;
+        }
+        if (_run is not null) _spec = _run.Spec;
+    }
+
+    private string RoleName(string role) => Game.Theme.Label(role switch
+    {
+        "defias" => "raiders",
+        "probe" => "travellers",
+        "web" => "board",
+        _ => role,
+    });
+
+    private string Subnet(string key) => _spec.Networks.First(n => n.Key == key).Subnet;
+
+    private string Address(string role, string network) => _spec.Node(role).AddressOn(network);
+
+    private string Port(string key) => _spec.Parameters.GetValueOrDefault(key, "?");
+}

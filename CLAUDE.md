@@ -114,6 +114,7 @@ Dessa är krav, inte riktlinjer. Ändra dem inte utan att fråga.
 - **Statiska filer serveras med `UseStaticFiles` och `UseStaticWebAssets`, inte `MapStaticAssets`.** Körd direkt från byggmappen svarade `MapStaticAssets` med tomma filer när webbläsaren bad om komprimerade varianter.
 - **Blazor-paketet saknas i Claudes arbetsmiljö.** Där bygger `Game.Api` med en lokal `Directory.Build.targets` utanför repot som tar bort `Microsoft.AspNetCore.App.Internal.Assets`. Den ska aldrig in i repot; på utvecklingsmaskinen hämtas paketet från NuGet.
 - **En körning stannar när Docker startas om** och startar inte av sig själv (`RestartPolicy` är `no`). `LabRun.IsRunning` är falsk då; `status` säger det, `play` bygger om körningen med samma frö, och webbsidan visar att labbet är stoppat i stället för att försöka öppna en terminal.
+- **Sidan "How it's built"** (`/how-it-works`, `HowItWorks.razor`) förklarar labbet, spelets gång, domen, systemdesignen, säkerheten och tekniken. Diagrammen är SVG i komponenten. Adresser, portar och containrar läses från den pågående körningen (annars ett exempel med frö 1) och vågtabellen från scenariot, så sidan följer koden. Den behöver ingen interaktivitet: menyn är vanliga länkar.
 - **En delad avbild för värdarna på slätten** (`lab/images/host`). Trafiken skickas med `docker exec` från `Game.Checks`.
 
 ## Konventioner
