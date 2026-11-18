@@ -17,6 +17,8 @@ public static class SentinelHill
     private const long Mb = 1024 * 1024;
     private static readonly int[] DatabasePorts = [3306, 5432, 6379, 27017];
     private static readonly string[] PlainsHosts = ["citizens", "garrison", "defias", "probe"];
+    private static readonly string[] Words =
+        ["lantern", "harvest", "anvil", "barley", "falcon", "copper", "meadow", "thistle", "granite", "hearth", "willow", "ember"];
 
     public static LabSpec Create(int seed)
     {
@@ -37,6 +39,8 @@ public static class SentinelHill
 
         var debugPort = rng.Next(8000, 9000);
         var databasePort = DatabasePorts[rng.Next(DatabasePorts.Length)];
+        // Drawn last, so that the networks and ports of a seed stay as they were.
+        var word = Words[rng.Next(Words.Length)];
 
         var none = new Dictionary<string, string>();
         var nodes = new List<NodeSpec>
@@ -65,6 +69,7 @@ public static class SentinelHill
                 {
                     ["DEBUG_PORT"] = debugPort.ToString(),
                     ["DB_PORT"] = databasePort.ToString(),
+                    ["BOARD_WORD"] = word,
                 },
                 Routes: [new(plainsSubnet, gateOnDmz)],
                 // Deliberately small so the swarm in wave 3 hurts.

@@ -29,6 +29,65 @@
       ],
       "waves": {
         "0": {
+          "title": "A new recruit",
+          "briefing": [
+            "\"So you are the one who will hold my gate,\" says Gryan Stoutmantle. \"First, show me you can work the old machine in the gatehouse.\"",
+            "",
+            "The terminal in front of you is a shell: you type a command, press Enter, and the machine answers.",
+            "Ask it its name: type hostname and press Enter. Then report the name it gives:",
+            "",
+            "  quest report name=<the name>"
+          ]
+        },
+        "1": {
+          "title": "Two roads, two addresses",
+          "briefing": [
+            "\"The gate stands between Westfall and Sentinel Hill,\" says Gryan, \"and it answers to a different address on each side.\"",
+            "",
+            "The notice board on the hill has the address {web}.",
+            "Find the gate's own address on the Sentinel Hill side, on the same network as the board.",
+            "",
+            "  quest report address=<the gate's address>"
+          ]
+        },
+        "2": {
+          "title": "Is anyone there?",
+          "briefing": [
+            "\"Before you guard the board, make sure it is still standing,\" says Gryan.",
+            "",
+            "ping sends a small packet to a machine and waits for a reply. Ping the board at {web} four times.",
+            "Every reply shows a ttl, the number of routers the packet may still pass. Report the ttl the board's replies arrive with:",
+            "",
+            "  quest report ttl=<number>"
+          ],
+          "question": "Pinged from a farm in Westfall, the board's replies would show a ttl one lower. Why?"
+        },
+        "3": {
+          "title": "The word of the day",
+          "briefing": [
+            "Every morning the Militia pins a word to the notice board, and every guard must know it.",
+            "",
+            "The board is a web server. curl fetches a web page and prints what the server sends back.",
+            "Fetch the page at http://{web}/ and find the word of the day on it:",
+            "",
+            "  quest report word=<the word>"
+          ]
+        },
+        "4": {
+          "title": "Eyes on the road",
+          "briefing": [
+            "\"A farmer is reading the board right now,\" says Gryan. \"Every word of it passes your gate. Learn to see it.\"",
+            "",
+            "tcpdump shows the packets that pass. Watch the traffic to the board at {web}",
+            "and find the address of the one who is reading it:",
+            "",
+            "  quest report talker=<their address>",
+            "",
+            "Stop tcpdump with Ctrl+C when you have seen enough."
+          ],
+          "question": "You could see every packet between the farmer and the board. What could a Defias in your place see?"
+        },
+        "5": {
           "title": "Know your gate",
           "briefing": [
             "\"Before you hold a gate you must know it,\" says Gryan. \"Nobody comes tonight. Use the time.\"",
@@ -44,7 +103,7 @@
           ],
           "question": "Four doors answered. How many of them does a farmer reading the board need?"
         },
-        "1": {
+        "6": {
           "title": "Defias scouts",
           "briefing": [
             "Defias scouts creep along the fields, trying every door they can reach through the gate.",
@@ -57,7 +116,7 @@
           ],
           "question": "Who besides the farmers needs to reach this board, and for what?"
         },
-        "2": {
+        "7": {
           "title": "The break-in",
           "briefing": [
             "Someone in a red bandana is hammering at the board's management port ({management}),",
@@ -71,7 +130,7 @@
           ],
           "question": "The Militia's address is now a key. What happens the day the Defias get hold of it?"
         },
-        "3": {
+        "8": {
           "title": "The Brotherhood rides",
           "briefing": [
             "Edwin VanCleef has sent the Brotherhood in force: a flood of requests at the board,",

@@ -43,7 +43,7 @@ internal static class HostTest
         }
 
         Expect("before the start the host is idle", host.View.Phase == GamePhase.Idle);
-        await host.StartAsync();
+        await host.StartAsync(firstWave: 5);
         var view = host.View;
         Expect("the start builds a lab and the game is playing", view.Phase == GamePhase.Playing && view.RunId is not null, view.Phase.ToString());
 
@@ -59,12 +59,12 @@ internal static class HostTest
 
         try
         {
-            Expect("wave 0 is shown with its briefing", await WaitFor(v => v.CurrentWave == 0 && v.Briefing?.Contains("Wave 0 of 3") == true));
-            Expect("the waves of the scenario are listed", host.View.Waves.Count == 4);
+            Expect("the map wave is shown with its briefing", await WaitFor(v => v.CurrentWave == 5 && v.Briefing?.Contains("Wave 5 of 8") == true));
+            Expect("the waves of the scenario are listed", host.View.Waves.Count == 9);
             Expect("the game is in the host's theme", host.View.ScenarioTitle == host.LoadScenario().Title
                 && host.View.Briefing?.Contains("Gryan") == true, host.View.ScenarioTitle);
             await Task.Delay(3500);
-            Expect("in wave 0 no doors are shown: finding them is the task", host.View.Doors.Count == 0);
+            Expect("in the map wave no doors are shown: finding them is the task", host.View.Doors.Count == 0);
             Expect("the gate's state is shown", await WaitFor(v => v.GateState is not null, 8), host.View.GateState ?? "");
 
             await Quest("hint");
@@ -74,11 +74,11 @@ internal static class HostTest
             var plains = spec.Networks.First(n => n.Key == SentinelHill.Plains).Subnet;
             var dmz = spec.Networks.First(n => n.Key == SentinelHill.Dmz).Subnet;
             await Quest($"report plains={plains} dmz={dmz} ports={string.Join(",", spec.Parameters.Values)}");
-            Expect("the report moves the game to wave 1", await WaitFor(v => v.CurrentWave == 1));
-            Expect("the held wave is counted with its XP", host.View.Outcomes is [{ Wave: 0, Xp: 30 }],
+            Expect("the report moves the game to wave 6", await WaitFor(v => v.CurrentWave == 6));
+            Expect("the held wave is counted with its XP", host.View.Outcomes is [{ Wave: 5, Xp: 30 }],
                 string.Join(", ", host.View.Outcomes));
 
-            Expect("in wave 1 the doors appear, all reachable with no rules",
+            Expect("in wave 6 the doors appear, all reachable with no rules",
                 await WaitFor(v => v.Doors.Count == 4 && v.Doors.All(d => d.OutsidersReach == true)),
                 string.Join(", ", host.View.Doors));
 
@@ -91,13 +91,13 @@ internal static class HostTest
                 view.Log.Last().Kind == "fell" && view.Intrusions == 3 && view.Health == 1.0,
                 $"{view.Log.Last().Kind} intrusions={view.Intrusions} health={view.Health}");
 
-            await SelfTest.LoadAsync(docker, run, SelfTest.RightDefence(1));
+            await SelfTest.LoadAsync(docker, run, SelfTest.RightDefence(6));
             Expect("the doors follow the new rules: only the board stays reachable",
                 await WaitFor(v => v.Doors.Count == 4 && v.Doors.All(d => d.OutsidersReach == (d.Name == "http"))),
                 string.Join(", ", host.View.Doors));
 
             await Quest("ready");
-            Expect("the right defence holds wave 1 and the game moves on", await WaitFor(v => v.CurrentWave == 2));
+            Expect("the right defence holds wave 6 and the game moves on", await WaitFor(v => v.CurrentWave == 7));
             view = host.View;
             Expect("after the held wave the meters show a clean gate", view.Intrusions is null || view.Intrusions == 0,
                 $"intrusions={view.Intrusions}");
@@ -109,47 +109,47 @@ internal static class HostTest
             var saved = new HistoryStore(historyPath).Games;
             Expect("the game is kept in the history, with both held waves and the failed attempt",
                 saved is [{ Theme: "wow", Completed: false, Ended: not null } game]
-                && game.Waves.Select(w => w.Wave).SequenceEqual([0, 1])
-                && game.Attempts.Count(a => !a.Held) == 1 && game.Hints.GetValueOrDefault(0) == 1,
+                && game.Waves.Select(w => w.Wave).SequenceEqual([5, 6])
+                && game.Attempts.Count(a => !a.Held) == 1 && game.Hints.GetValueOrDefault(5) == 1,
                 saved.Count.ToString());
             var progress = history.Progress(host.LoadScenario());
-            Expect("the progress shows wave 1 mastered, wave 0 held with a hint, and what wave 1 fell on",
-                progress[0] is { Held: 1, Mastered: 0, HintsUsed: 1 } && progress[1] is { Mastered: 1 }
-                && progress[1].StuckOn?.Contains("Defias scouts") == true,
+            Expect("the progress shows wave 6 mastered, wave 5 held with a hint, and what wave 6 fell on",
+                progress[5] is { Held: 1, Mastered: 0, HintsUsed: 1 } && progress[6] is { Mastered: 1 }
+                && progress[6].StuckOn?.Contains("Defias scouts") == true,
                 string.Join(" | ", progress));
-            Expect("the next wave to practise is wave 0, the first not mastered", history.SuggestedWave(host.LoadScenario()) == 0);
+            Expect("the next wave to practise is wave 0, the first not played", history.SuggestedWave(host.LoadScenario()) == 0);
             Expect("stopping ends the game but keeps the lab",
                 host.View.Phase == GamePhase.Idle && (await lab.FindAsync(run.RunId)) is { IsRunning: true });
             Expect("after stopping, quest says no game is running", (await Quest()).Contains("No game is running"));
 
-            await host.StartAsync(firstWave: 2);
+            await host.StartAsync(firstWave: 7);
             Expect("a new game reuses the running lab and can start at a later wave",
-                await WaitFor(v => v.CurrentWave == 2) && host.View.RunId == run.RunId);
+                await WaitFor(v => v.CurrentWave == 7) && host.View.RunId == run.RunId);
 
             host.ShowAnswers();
             view = host.View;
             var answers = view.Answers ?? [];
             var web = spec.Node("web").AddressOn(SentinelHill.Dmz);
             Expect("cheat mode shows an answer for every wave, with this run's addresses and ports",
-                view.CheatMode && answers.Count == 4
-                && answers[0].Steps == $"quest report plains={plains} dmz={dmz} ports={string.Join(",", spec.Parameters.Values.Select(int.Parse).Order())}"
-                && answers[2].Steps.Contains(web) && answers[2].Steps.Contains(spec.Node("garrison").AddressOn(SentinelHill.Plains))
+                view.CheatMode && answers.Count == 9
+                && answers[5].Steps == $"quest report plains={plains} dmz={dmz} ports={string.Join(",", spec.Parameters.Values.Select(int.Parse).Order())}"
+                && answers[7].Steps.Contains(web) && answers[7].Steps.Contains(spec.Node("garrison").AddressOn(SentinelHill.Plains))
                 && answers.All(a => a.Discussion.Length > 0 && !a.Steps.Contains('{' + "web}")),
-                answers.Count > 0 ? answers[0].Steps : "no answers");
+                answers.Count > 5 ? answers[5].Steps : "no answers");
             Expect("turning cheat mode on is noted in the log", view.Log.Last().Kind == "cheat");
 
             await docker.ExecAsync(run.ContainerName("gate"), ["nft", "flush", "ruleset"]);
-            var pasted = await docker.ExecAsync(run.ContainerName("gate"), ["sh", "-c", answers[2].Steps]);
+            var pasted = await docker.ExecAsync(run.ContainerName("gate"), ["sh", "-c", answers[7].Steps]);
             await Quest("ready");
-            Expect("the pasted answer holds wave 2, for the minimum XP and not mastered",
-                pasted.Succeeded && await WaitFor(v => v.Outcomes.Any(o => o.Wave == 2))
-                && host.View.Outcomes.First(o => o.Wave == 2) is { Xp: GameSession.MinimumXp, Mastered: false, Cheated: true },
+            Expect("the pasted answer holds wave 7, for the minimum XP and not mastered",
+                pasted.Succeeded && await WaitFor(v => v.Outcomes.Any(o => o.Wave == 7))
+                && host.View.Outcomes.First(o => o.Wave == 7) is { Xp: GameSession.MinimumXp, Mastered: false, Cheated: true },
                 string.Join(", ", host.View.Outcomes));
             host.HideAnswers();
             Expect("the answers can be hidden again", !host.View.CheatMode);
             await host.StopAsync();
-            Expect("the history shows wave 2 as held with the answer",
-                history.Progress(host.LoadScenario())[2] is { Held: 1, Mastered: 0, HeldWithoutAnswer: 0 });
+            Expect("the history shows wave 7 as held with the answer",
+                history.Progress(host.LoadScenario())[7] is { Held: 1, Mastered: 0, HeldWithoutAnswer: 0 });
         }
         finally
         {

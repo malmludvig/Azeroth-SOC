@@ -1,5 +1,6 @@
 {
   "id": "sentinel-hill",
+  "version": 2,
   "title": "Hold the gate",
   "intro": [
     "You guard the gate between the plains and the town.",
@@ -13,6 +14,252 @@
   "waves": [
     {
       "number": 0,
+      "skill": "Running commands in a shell",
+      "title": "The first command",
+      "kind": "report",
+      "xp": 30,
+      "briefing": [
+        "Welcome to the gate. The terminal in front of you is a shell: you type a command, press Enter, and the machine answers.",
+        "",
+        "Start with the simplest question a machine can answer: what is your name?",
+        "Type hostname and press Enter. Then report the name it gives:",
+        "",
+        "  quest report name=<the name>"
+      ],
+      "question": "Other machines do not find the gate by its name but by its address. What is an address for?",
+      "expect": {
+        "name": "gate"
+      },
+      "hints": [
+        {
+          "level": 1,
+          "text": [
+            "Commands are words you type and run with Enter. hostname is one of them."
+          ]
+        },
+        {
+          "level": 2,
+          "text": [
+            "Type hostname on its own line and press Enter. The line it prints is the name."
+          ]
+        },
+        {
+          "level": 3,
+          "text": [
+            "hostname",
+            "quest report name=<what hostname printed>"
+          ]
+        }
+      ],
+      "answer": [
+        "quest report name=$(hostname)"
+      ],
+      "questionAnswer": [
+        "An address says where on a network a machine is, so that packets can be sent to it.",
+        "Names are for people. The next mission is about the gate's addresses."
+      ]
+    },
+    {
+      "number": 1,
+      "skill": "IP addresses and interfaces",
+      "title": "Your two addresses",
+      "kind": "report",
+      "xp": 30,
+      "briefing": [
+        "The gate stands between two networks and has an address on each: one towards the plains, one towards the town.",
+        "",
+        "The notice board in the town has the address {web}.",
+        "Find the gate's own address on the town side, on the same network as the board.",
+        "",
+        "  quest report address=<the gate's address>"
+      ],
+      "question": "The board and the gate share the first three numbers of their addresses. What does that tell you?",
+      "expect": {
+        "address": "{gatedmz}"
+      },
+      "hints": [
+        {
+          "level": 1,
+          "text": [
+            "Every network interface has its own address. A machine on two networks has at least two."
+          ]
+        },
+        {
+          "level": 2,
+          "text": [
+            "ip -br addr lists every interface on one line, with its address and, after a slash, its prefix length."
+          ]
+        },
+        {
+          "level": 3,
+          "text": [
+            "ip -br addr",
+            "Pick the address that starts with the same three numbers as {web}, and leave out the /24.",
+            "quest report address=<that address>"
+          ]
+        }
+      ],
+      "answer": [
+        "ip -br addr",
+        "quest report address={gatedmz}"
+      ],
+      "questionAnswer": [
+        "They are on the same network, here a /24: the first three numbers name the network and the last one the machine.",
+        "Machines on the same network reach each other directly. Everything else has to go through a router, like the gate."
+      ]
+    },
+    {
+      "number": 2,
+      "skill": "Reachability with ping",
+      "title": "Is anyone there?",
+      "kind": "report",
+      "xp": 30,
+      "briefing": [
+        "Before anything else, find out whether the notice board answers at all.",
+        "",
+        "ping sends a small packet to a machine and waits for a reply. Ping the board at {web} four times.",
+        "Every reply shows a ttl, the number of routers the packet may still pass. Report the ttl the board's replies arrive with:",
+        "",
+        "  quest report ttl=<number>"
+      ],
+      "question": "Pinged from a host on the plains, the board's replies would show a ttl one lower. Why?",
+      "expect": {
+        "ttl": "64"
+      },
+      "hints": [
+        {
+          "level": 1,
+          "text": [
+            "A ping is a knock on the door: the other side answers if it is there and allowed to."
+          ]
+        },
+        {
+          "level": 2,
+          "text": [
+            "ping -c 4 <address> sends four pings and stops. Read ttl= on the reply lines."
+          ]
+        },
+        {
+          "level": 3,
+          "text": [
+            "ping -c 4 {web}",
+            "quest report ttl=<the number after ttl=>"
+          ]
+        }
+      ],
+      "answer": [
+        "ping -c 4 {web}",
+        "quest report ttl=64"
+      ],
+      "questionAnswer": [
+        "Every router a packet passes lowers its ttl by one. From the plains the reply crosses the gate, which is a router.",
+        "The ttl stops packets from circling forever, and hints at how many routers are on the way."
+      ]
+    },
+    {
+      "number": 3,
+      "skill": "HTTP with curl",
+      "title": "Read the notice board",
+      "kind": "report",
+      "xp": 30,
+      "briefing": [
+        "The notice board is a web server. Read it the way a browser would, but from the shell.",
+        "",
+        "curl fetches a web page and prints what the server sends back.",
+        "Fetch the page at http://{web}/ and find the word of the day on it:",
+        "",
+        "  quest report word=<the word>"
+      ],
+      "question": "curl spoke HTTP to the board's port {http}, as a browser would. What else can a client learn from talking to a server like this?",
+      "expect": {
+        "word": "{word}"
+      },
+      "hints": [
+        {
+          "level": 1,
+          "text": [
+            "A web page is just text that a server sends when asked over HTTP."
+          ]
+        },
+        {
+          "level": 2,
+          "text": [
+            "curl <url> prints the page. The word of the day stands on its own line."
+          ]
+        },
+        {
+          "level": 3,
+          "text": [
+            "curl http://{web}/",
+            "quest report word=<the word of the day>"
+          ]
+        }
+      ],
+      "answer": [
+        "curl -s http://{web}/",
+        "quest report word={word}"
+      ],
+      "questionAnswer": [
+        "Whatever the server chooses to say: the page, but also headers that may name the server software and its version (curl -i shows them).",
+        "That is why a public service should tell outsiders as little as it can."
+      ]
+    },
+    {
+      "number": 4,
+      "skill": "Watching traffic with tcpdump",
+      "title": "Who is talking?",
+      "kind": "report",
+      "xp": 30,
+      "briefing": [
+        "Right now someone on the plains is reading the notice board, and every packet of it passes through your gate.",
+        "",
+        "tcpdump shows the packets that pass. Watch the traffic to the board at {web}",
+        "and find the address of the one who is reading it:",
+        "",
+        "  quest report talker=<their address>",
+        "",
+        "Stop tcpdump with Ctrl+C when you have seen enough."
+      ],
+      "question": "You could see every packet between them and the board. What could an attacker in your place see?",
+      "expect": {
+        "talker": "{citizens}"
+      },
+      "background": [
+        "citizens"
+      ],
+      "hints": [
+        {
+          "level": 1,
+          "text": [
+            "Every packet carries the address it comes from and the address it goes to."
+          ]
+        },
+        {
+          "level": 2,
+          "text": [
+            "tcpdump -n -i any host <address> shows every packet to or from that address, with numbers instead of names."
+          ]
+        },
+        {
+          "level": 3,
+          "text": [
+            "tcpdump -n -i any host {web} and tcp port {http}",
+            "The address that is not {web} belongs to the reader.",
+            "quest report talker=<that address>"
+          ]
+        }
+      ],
+      "answer": [
+        "tcpdump -n -c 6 -i any host {web} and tcp port {http}",
+        "quest report talker={citizens}"
+      ],
+      "questionAnswer": [
+        "Everything that is not encrypted: addresses, ports, and the content of plain HTTP, including any password sent over it.",
+        "Whoever runs a router sees the traffic. That is why sensitive traffic should be encrypted end to end, with TLS or a VPN."
+      ]
+    },
+    {
+      "number": 5,
       "skill": "Reading a network: interfaces, routes and listening ports",
       "title": "Map the gate",
       "kind": "report",
@@ -60,10 +307,15 @@
       "questionAnswer": [
         "One: the web port. Management, the debug page and the database answered too, and none of them is for a reader.",
         "Every port that answers is a way in. The next waves are about closing the ones nobody outside needs."
-      ]
+      ],
+      "expect": {
+        "plains": "{plains}",
+        "dmz": "{dmz}",
+        "ports": "{ports}"
+      }
     },
     {
-      "number": 1,
+      "number": 6,
       "skill": "Default deny and connection tracking",
       "title": "The scouts",
       "kind": "traffic",
@@ -176,7 +428,7 @@
       ]
     },
     {
-      "number": 2,
+      "number": 7,
       "skill": "Rules by source address",
       "title": "The break-in",
       "kind": "traffic",
@@ -282,7 +534,7 @@
       ]
     },
     {
-      "number": 3,
+      "number": 8,
       "skill": "Rate limiting per source",
       "title": "The swarm",
       "kind": "traffic",

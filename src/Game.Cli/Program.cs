@@ -11,7 +11,7 @@ using Game.Orchestration;
 //   down                        remove the current run
 //   sweep [--expired]           remove every lab run, or only those past their lifetime
 //   soak [N]                    up, reset, down N times and check that nothing is left behind
-//   check <wave>                judge the current run against a wave (1 to 3)
+//   check <wave>                judge the current run against a traffic wave (6 to 8)
 //   selftest                    judge known right and wrong defences and require the expected verdicts
 //   play [--wave N] [--seed N]  play the scenario: you work in the gate, this terminal is the game master
 //   playtest                    play the whole scenario automatically and require the expected outcome
@@ -283,7 +283,7 @@ static int History()
 {
     var history = HistoryStore.Default();
     var scenario = Theme.Current().Apply(Scenario.Load(Scenario.Locate(SentinelHill.Scenario)));
-    var games = history.Games.Where(g => g.Scenario == scenario.Id).ToList();
+    var games = history.Games.Where(g => g.Scenario == scenario.Id && g.ScenarioVersion == scenario.Version).ToList();
     Console.WriteLine($"{scenario.Title}: {games.Count} game(s), {games.Count(g => g.Completed)} completed. Kept in {history.Path}");
     Console.WriteLine();
     foreach (var p in history.Progress(scenario))

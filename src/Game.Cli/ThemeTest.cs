@@ -52,7 +52,7 @@ internal static class ThemeTest
             wow.Title != scenario.Title && !wow.Wave(1).Briefing.SequenceEqual(scenario.Wave(1).Briefing)
             && Theme.Load("wow").Label("raiders") == "Defias");
 
-        Refused("a briefing without the address of the board", w => w.Select(l => l.Replace("{web}", "the board")).ToArray());
+        Refused("a briefing without the address of the board", w => w.Select(l => l.Replace("{web}", "the board")).ToArray(), "1");
         Refused("a briefing without the report command", w => w.Where(l => !l.Contains("quest report")).ToArray());
         Refused("a wave the scenario does not have", null, wave: "9");
 

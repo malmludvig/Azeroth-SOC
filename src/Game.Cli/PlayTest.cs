@@ -51,44 +51,65 @@ internal static class PlayTest
                 if (game.IsFaulted) await game;
                 text = await Quest();
             }
-            Expect("the first mission is shown and names the notice board", text.Contains("Wave 0") && text.Contains(web), text);
-            Expect("the first mission does not give the networks away", !text.Contains(plains) && !text.Contains(dmz), text);
+            Expect("the first mission is shown and asks for the gate's name", text.Contains("Wave 0") && text.Contains("hostname"), text);
 
+            // The five easy waves: a wrong report first, then the answer from cheat
+            // mode run in the gate as the player would type it.
+            var answers = Answers.For(scenario, spec);
             text = await Quest("ready");
             Expect("wave 0 cannot be settled with the bell", text.Contains("report"), text);
+            text = await Quest("report name=castle");
+            Expect("a wrong report is refused and says what is wrong", text.Contains("Not right yet: name."), text);
+            var easy = new[] { "the gate's name", "the gate's address", "the ttl of a ping", "the word on the board", "who is reading the board" };
+            for (var wave = 0; wave < 5; wave++)
+            {
+                if (wave > 0)
+                {
+                    text = await Quest();
+                    Expect($"the next mission is wave {wave}", text.Contains($"Wave {wave}"), text);
+                }
+                var steps = answers[wave].Steps.Replace("\n", "; ");
+                text = (await docker.ExecAsync(run.ContainerName("gate"), ["timeout", "40", "sh", "-c", steps])).Output;
+                var xp = wave == 0 ? 20 : 30;
+                Expect($"wave {wave} is held by reporting {easy[wave]}", text.Contains($"Wave {wave} is held. +{xp} XP, and mastered"), text);
+            }
+
+            text = await Quest();
+            Expect("the map wave names the notice board", text.Contains("Wave 5") && text.Contains(web), text);
+            Expect("the map wave does not give the networks away", !text.Contains(plains) && !text.Contains(dmz), text);
             text = await Quest($"report plains=10.1.2.0/24 dmz={dmz} ports=80");
-            Expect("a wrong report is refused and says what is wrong", text.Contains("Not right yet: plains, ports (1 of 4 found)"), text);
-            Expect("a wrong report does not reveal the answer", !text.Contains(plains), text);
+            Expect("a wrong map is refused and says what is wrong", text.Contains("Not right yet: plains, ports (1 of 4 found)"), text);
+            Expect("a wrong map does not reveal the answer", !text.Contains(plains), text);
             text = await Quest("hint");
             Expect("a hint is given at level 1", text.Contains("Hint 1 of 3"), text);
             text = await Quest($"report plains={plains} dmz={dmz} ports={ports}");
-            Expect("the right report holds wave 0 for 20 XP", text.Contains("Wave 0 is held. +20 XP"), text);
+            Expect("the right map holds wave 5 for 20 XP", text.Contains("Wave 5 is held. +20 XP"), text);
 
             text = await Quest();
-            Expect("the next mission is wave 1", text.Contains("Wave 1"), text);
+            Expect("the next mission is wave 6", text.Contains("Wave 6"), text);
             await SelfTest.LoadAsync(docker, run, SelfTest.NoEstablishedDefence);
             await Quest("hint");
             text = await Quest("hint");
             Expect("the level 2 hint fits the gate: it talks about replies", text.Contains("Hint 2 of 3") && text.Contains("ct state"), text);
             text = await Quest("ready");
-            Expect("a wrong defence does not hold wave 1", text.Contains("FELL") && text.Contains("Not held yet"), text);
-            await SelfTest.LoadAsync(docker, run, SelfTest.RightDefence(1));
+            Expect("a wrong defence does not hold wave 6", text.Contains("FELL") && text.Contains("Not held yet"), text);
+            await SelfTest.LoadAsync(docker, run, SelfTest.RightDefence(6));
             text = await Quest("ready");
-            Expect("the right defence holds wave 1 for 50 XP", text.Contains("Wave 1 is held. +50 XP"), text);
+            Expect("the right defence holds wave 6 for 50 XP", text.Contains("Wave 6 is held. +50 XP"), text);
 
             text = await Quest("ready");
-            Expect("the wave 1 defence does not hold wave 2", text.Contains("FELL") && text.Contains("garrison"), text);
-            await SelfTest.LoadAsync(docker, run, SelfTest.RightDefence(2));
+            Expect("the wave 6 defence does not hold wave 7", text.Contains("FELL") && text.Contains("garrison"), text);
+            await SelfTest.LoadAsync(docker, run, SelfTest.RightDefence(7));
             text = await Quest("ready");
-            Expect("the right defence holds wave 2 for 90 XP", text.Contains("Wave 2 is held. +90 XP"), text);
+            Expect("the right defence holds wave 7 for 90 XP", text.Contains("Wave 7 is held. +90 XP"), text);
 
-            await SelfTest.LoadAsync(docker, run, SelfTest.RightDefence(3));
+            await SelfTest.LoadAsync(docker, run, SelfTest.RightDefence(8));
             text = await Quest("ready");
-            Expect("the right defence holds wave 3, mastered", text.Contains("Wave 3 is held. +100 XP, and mastered"), text);
-            Expect("the ending shows the total", text.Contains("Total 260 XP, 2 of 4 waves mastered"), text);
+            Expect("the right defence holds wave 8, mastered", text.Contains("Wave 8 is held. +100 XP, and mastered"), text);
+            Expect("the ending shows the total", text.Contains("Total 400 XP, 7 of 9 waves mastered"), text);
 
             var outcomes = await game.WaitAsync(TimeSpan.FromSeconds(10));
-            Expect("the game ends with four waves and 260 XP", outcomes.Count == 4 && outcomes.Sum(o => o.Xp) == 260,
+            Expect("the game ends with nine waves and 400 XP", outcomes.Count == 9 && outcomes.Sum(o => o.Xp) == 400,
                 string.Join(", ", outcomes.Select(o => $"wave {o.Wave}: {o.Xp}")));
 
             text = await Quest();

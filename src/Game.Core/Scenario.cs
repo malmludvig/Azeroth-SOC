@@ -29,7 +29,9 @@ public sealed record WaveSpec(
     CheckSpec[]? Checks = null,
     string Skill = "",
     string[]? Answer = null,
-    string[]? QuestionAnswer = null)
+    string[]? QuestionAnswer = null,
+    Dictionary<string, string>? Expect = null,
+    string[]? Background = null)
 {
     public const string Report = "report";
     public const string Traffic = "traffic";
@@ -47,7 +49,9 @@ public sealed record WaveVerdict(int Wave, IReadOnlyList<CheckOutcome> Outcomes)
 /// and the text the player sees. The topology and the checks' code live
 /// elsewhere; this file decides which checks a wave uses and with what numbers.
 /// </summary>
-public sealed record Scenario(string Id, string Title, string[] Intro, string[] Outro, WaveSpec[] Waves)
+/// <param name="Version">Raised when waves are added, removed or renumbered, so that the history of an
+/// older version is not counted against the new waves.</param>
+public sealed record Scenario(string Id, string Title, string[] Intro, string[] Outro, WaveSpec[] Waves, int Version = 1)
 {
     public static readonly string[] HintConditions =
         ["always", "no-forward-chain", "policy-accept", "no-established", "no-rate-limit"];
@@ -146,6 +150,12 @@ public sealed record Scenario(string Id, string Title, string[] Intro, string[] 
             if (wave.Kind is not (WaveSpec.Report or WaveSpec.Traffic)) Fail($"wave {wave.Number} has unknown kind '{wave.Kind}'.");
             if (wave.Kind == WaveSpec.Traffic && (wave.Checks is null || wave.Checks.Length == 0))
                 Fail($"wave {wave.Number} is a traffic wave without checks.");
+            if (wave.Kind == WaveSpec.Report && (wave.Expect is null || wave.Expect.Count == 0))
+                Fail($"wave {wave.Number} is a report wave without the values it expects.");
+            foreach (var role in wave.Background ?? [])
+            {
+                if (role is not ("citizens" or "garrison" or "defias" or "probe")) Fail($"wave {wave.Number} has background traffic from unknown role '{role}'.");
+            }
 
             foreach (var check in wave.Checks ?? [])
             {

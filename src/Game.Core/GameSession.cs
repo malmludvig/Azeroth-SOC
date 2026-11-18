@@ -74,7 +74,20 @@ public sealed class GameSession(
             _events(new WaveStarted(wave, briefing));
             _log($"Wave {wave.Number}: {wave.Title}. Waiting for the player.");
 
-            var (outcome, request, verdictText) = await PlayWaveAsync(wave, ct);
+            using var background = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var traffic = wave.Background is { Length: > 0 } ? BackgroundAsync(wave, background.Token) : Task.CompletedTask;
+            WaveOutcome outcome;
+            QuestRequest request;
+            string verdictText;
+            try
+            {
+                (outcome, request, verdictText) = await PlayWaveAsync(wave, ct);
+            }
+            finally
+            {
+                await background.CancelAsync();
+                await traffic;
+            }
             outcomes.Add(outcome);
 
             // The next mission is in place before the player is told this one is
@@ -131,7 +144,7 @@ public sealed class GameSession(
 
                 case "report" when wave.Kind == WaveSpec.Report:
                     attempts++;
-                    (held, verdict) = JudgeReport(request.Arguments);
+                    (held, verdict) = JudgeReport(wave, request.Arguments);
                     break;
 
                 case "ready" when wave.Kind == WaveSpec.Traffic:
@@ -175,36 +188,75 @@ public sealed class GameSession(
         return (verdict.Passed, text.ToString(), verdict.Outcomes);
     }
 
-    // The report says which parts are wrong, never what the right answer is.
-    private (bool Held, string Text) JudgeReport(string[] arguments)
+    // A report names values, key=value. Each is compared with what the wave
+    // expects; a list of ports is compared as a set. The reply says which
+    // parts are wrong, never what the right answer is.
+    private (bool Held, string Text) JudgeReport(WaveSpec wave, string[] arguments)
     {
-        var given = arguments
-            .Select(a => a.Split('=', 2))
-            .Where(p => p.Length == 2)
-            .ToDictionary(p => p[0].Trim().ToLowerInvariant(), p => p[1].Trim());
-
-        var spec = run.Spec;
-        var truePorts = new[] { "http", "management", "debug", "database" }.Select(_context.Port).ToHashSet();
-        var givenPorts = given.GetValueOrDefault("ports", "")
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(p => int.TryParse(p, out var port) ? port : -1)
-            .ToHashSet();
+        var given = new Dictionary<string, string>();
+        foreach (var pair in arguments.Select(a => a.Split('=', 2)).Where(p => p.Length == 2))
+            given[pair[0].Trim().ToLowerInvariant()] = pair[1].Trim();
 
         var wrong = new List<string>();
-        if (given.GetValueOrDefault("plains") != Subnet(SentinelHill.Plains)) wrong.Add("plains");
-        if (given.GetValueOrDefault("dmz") != Subnet(SentinelHill.Dmz)) wrong.Add("dmz");
-        if (!givenPorts.SetEquals(truePorts))
+        foreach (var (key, template) in wave.Expect ?? [])
         {
-            var found = givenPorts.Count(truePorts.Contains);
-            var extra = givenPorts.Count - found;
-            wrong.Add($"ports ({found} of {truePorts.Count} found" + (extra > 0 ? $", {extra} that do not answer" : "") + ")");
+            var expected = Answers.Render(template, run.Spec);
+            var value = given.GetValueOrDefault(key, "");
+            if (template == "{ports}")
+            {
+                var truePorts = Numbers(expected);
+                var givenPorts = Numbers(value);
+                if (givenPorts.SetEquals(truePorts)) continue;
+                var found = givenPorts.Count(truePorts.Contains);
+                var extra = givenPorts.Count - found;
+                wrong.Add($"{key} ({found} of {truePorts.Count} found" + (extra > 0 ? $", {extra} that do not answer" : "") + ")");
+            }
+            else if (!string.Equals(value, expected, StringComparison.OrdinalIgnoreCase))
+            {
+                wrong.Add(key);
+            }
         }
 
         return wrong.Count == 0
-            ? (true, "  [held] Your map of the gate is right.\n")
+            ? (true, "  [held] Your report is right.\n")
             : (false, $"  Not right yet: {string.Join(", ", wrong)}.\n");
 
-        string Subnet(string key) => spec.Networks.First(n => n.Key == key).Subnet;
+        static HashSet<int> Numbers(string list) => list
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(p => int.TryParse(p, out var port) ? port : -1)
+            .ToHashSet();
+    }
+
+    // While a wave with background traffic is played, its hosts keep reading
+    // the board, about once a second, in rounds of ten requests.
+    private async Task BackgroundAsync(WaveSpec wave, CancellationToken ct)
+    {
+        var script =
+            "i=0; while [ $i -lt 10 ]; do i=$((i+1)); " +
+            $"curl -s -o /dev/null -m 1 http://{_context.WebAddress}/; sleep 1; done";
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.WhenAll((wave.Background ?? []).Select(role => _context.ShellAsync(role, script, ct)));
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (Exception e) when (e is DockerException or LabException or HttpRequestException)
+            {
+                // A round that failed is tried again; the traffic is only scenery.
+                try
+                {
+                    await Task.Delay(1000, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+            }
+        }
     }
 
     private async Task<string> HintAsync(WaveSpec wave, int level, CancellationToken ct)
@@ -250,9 +302,5 @@ public sealed class GameSession(
     }
 
     // Addresses and ports change with every run, so the text names them by role.
-    private string Render(string[] lines) => string.Join('\n', lines)
-        .Replace("{web}", _context.WebAddress)
-        .Replace("{garrison}", _context.AddressOf("garrison"))
-        .Replace("{http}", _context.Port("http").ToString())
-        .Replace("{management}", _context.Port("management").ToString());
+    private string Render(string[] lines) => Answers.Render(string.Join('\n', lines), run.Spec);
 }

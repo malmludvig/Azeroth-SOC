@@ -37,7 +37,8 @@ public sealed record LabSpec(
     IReadOnlyList<NetworkSpec> Networks,
     IReadOnlyList<NodeSpec> Nodes,
     HealthProbe Health,
-    IReadOnlyDictionary<string, string> Parameters)
+    IReadOnlyDictionary<string, string> Parameters,
+    string BoardWord = "")
 {
     public NodeSpec Node(string role) => Nodes.First(n => n.Role == role);
 }

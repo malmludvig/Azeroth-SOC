@@ -73,6 +73,9 @@ internal static class ProxyTest
         await Refused("container with a foreign name", HttpMethod.Post, "/containers/create?name=intruder", Container(_ => { }));
         await Refused("container with an address outside the pool", HttpMethod.Post, create,
             Container(_ => { }, address: "192.168.1.50"));
+        var word = Container(_ => { });
+        word["Env"] = new JsonArray("BOARD_WORD=$(reboot)");
+        await Refused("container with a board word that is not a plain word", HttpMethod.Post, create, word);
 
         await Refused("network that is not internal", HttpMethod.Post, "/networks/create", Network(n => n["Internal"] = false));
         await Refused("network outside the address pool", HttpMethod.Post, "/networks/create",

@@ -182,6 +182,6 @@ internal static partial class Policy
     [GeneratedRegex(@"^(TERM=[a-z0-9-]{1,32}|PS1=[^\x00-\x1f]{0,64})$")]
     private static partial Regex TerminalVariable();
 
-    [GeneratedRegex(@"^(DEBUG_PORT|DB_PORT)=\d{1,5}$")]
+    [GeneratedRegex(@"^((DEBUG_PORT|DB_PORT)=\d{1,5}|BOARD_WORD=[a-z]{1,20})$")]
     private static partial Regex Variable();
 }

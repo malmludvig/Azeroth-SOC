@@ -29,30 +29,30 @@ internal static class SelfTest
 
     private static readonly Defence[] Defences =
     [
-        new(1, "default deny, board open", true, Deny(Established, Board)),
-        new(1, "policy accept with explicit drops", true,
+        new(6, "default deny, board open", true, Deny(Established, Board)),
+        new(6, "policy accept with explicit drops", true,
             Open + "policy accept;\n    ip daddr {WEB} tcp dport != {HTTP} ct state new drop" + Close),
-        new(1, "no rules at all", false, ""),
-        new(1, "everything blocked", false, Deny()),
-        new(1, "no rule for established flows", false, Deny(Board)),
-        new(1, "debug page left open", false, Deny(Established, "ip daddr {WEB} tcp dport { {HTTP}, {DEBUG} } accept")),
+        new(6, "no rules at all", false, ""),
+        new(6, "everything blocked", false, Deny()),
+        new(6, "no rule for established flows", false, Deny(Board)),
+        new(6, "debug page left open", false, Deny(Established, "ip daddr {WEB} tcp dport { {HTTP}, {DEBUG} } accept")),
 
-        new(2, "management from garrison only", true, Deny(Established, Management, Board)),
-        new(2, "management not opened", false, Deny(Established, Board)),
-        new(2, "management open to everyone", false,
+        new(7, "management from garrison only", true, Deny(Established, Management, Board)),
+        new(7, "management not opened", false, Deny(Established, Board)),
+        new(7, "management open to everyone", false,
             Deny(Established, "ip daddr {WEB} tcp dport {MGMT} accept", Board)),
-        new(2, "management open to the whole plains", false,
+        new(7, "management open to the whole plains", false,
             Deny(Established, "ip saddr {PLAINS} ip daddr {WEB} tcp dport {MGMT} accept", Board)),
-        new(2, "management right, board closed", false, Deny(Established, Management)),
+        new(7, "management right, board closed", false, Deny(Established, Management)),
 
-        new(3, "limit per source address", true, PerSource(10, Management, Board)),
-        new(3, "no rate limit", false, Deny(Established, Management, Board)),
-        new(3, "block list with one address", false,
+        new(8, "limit per source address", true, PerSource(10, Management, Board)),
+        new(8, "no rate limit", false, Deny(Established, Management, Board)),
+        new(8, "block list with one address", false,
             Deny(Established, "ip saddr {DEFIAS} drop", Management, Board)),
-        new(3, "one limit shared by everyone", false,
+        new(8, "one limit shared by everyone", false,
             Deny(Established, Management,
                 "ip daddr {WEB} tcp dport {HTTP} ct state new limit rate over 15/second burst 5 packets drop", Board)),
-        new(3, "limit per source far too generous", false, PerSource(100, Management, Board)),
+        new(8, "limit per source far too generous", false, PerSource(100, Management, Board)),
     ];
 
     /// <summary>A defence known to hold the given wave, for tests that need to get past it.</summary>

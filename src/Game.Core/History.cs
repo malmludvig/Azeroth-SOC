@@ -20,7 +20,8 @@ public sealed record GameRecord(
     bool Completed,
     List<WaveOutcome> Waves,
     List<AttemptRecord> Attempts,
-    Dictionary<int, int> Hints);
+    Dictionary<int, int> Hints,
+    int ScenarioVersion = 0);
 
 /// <summary>How one wave's skill stands over every game played.</summary>
 public sealed record SkillProgress(
@@ -91,7 +92,7 @@ public sealed class HistoryStore
     /// <summary>Progress per wave of a scenario, over every game of it.</summary>
     public IReadOnlyList<SkillProgress> Progress(Scenario scenario)
     {
-        var games = Games.Where(g => g.Scenario == scenario.Id).ToList();
+        var games = Games.Where(g => g.Scenario == scenario.Id && g.ScenarioVersion == scenario.Version).ToList();
         return scenario.Waves.OrderBy(w => w.Number).Select(wave =>
         {
             var outcomes = games.SelectMany(g => g.Waves).Where(o => o.Wave == wave.Number).ToList();
@@ -146,7 +147,7 @@ public sealed class GameRecorder(HistoryStore store, Scenario scenario, Theme th
 {
     private GameRecord _game = new(
         Guid.NewGuid().ToString("N")[..12], scenario.Id, theme.Id, seed, firstWave,
-        DateTimeOffset.Now, null, false, [], [], []);
+        DateTimeOffset.Now, null, false, [], [], [], scenario.Version);
 
     public void On(GameEvent e)
     {

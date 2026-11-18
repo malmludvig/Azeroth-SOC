@@ -29,6 +29,10 @@ public static class Answers
         return text
             .Replace("{web}", spec.Node("web").AddressOn(SentinelHill.Dmz))
             .Replace("{garrison}", spec.Node("garrison").AddressOn(SentinelHill.Plains))
+            .Replace("{citizens}", spec.Node("citizens").AddressOn(SentinelHill.Plains))
+            .Replace("{gatedmz}", spec.Node("gate").AddressOn(SentinelHill.Dmz))
+            .Replace("{gateplains}", spec.Node("gate").AddressOn(SentinelHill.Plains))
+            .Replace("{word}", spec.BoardWord)
             .Replace("{plains}", spec.Networks.First(n => n.Key == SentinelHill.Plains).Subnet)
             .Replace("{dmz}", spec.Networks.First(n => n.Key == SentinelHill.Dmz).Subnet)
             .Replace("{ports}", string.Join(",", ports))

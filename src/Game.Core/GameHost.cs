@@ -317,7 +317,7 @@ public sealed class GameHost(DockerEngine docker, LabOrchestrator lab, HistorySt
     // Between waves, look at the board from the plains every few seconds, so
     // the page shows what the player's rules do while they write them. Not
     // during a wave: the extra connections would disturb the measurements.
-    // Not in wave 0: which ports answer is what the player has to find out.
+    // Not in a report wave: which ports answer is what the player has to find out.
     private async Task ProbeLoopAsync(LabRun run, CancellationToken ct)
     {
         var context = new CheckContext(docker, run);
@@ -326,7 +326,9 @@ public sealed class GameHost(DockerEngine docker, LabOrchestrator lab, HistorySt
             try
             {
                 var view = View;
-                if (view.Phase == GamePhase.Playing && view.CurrentWave is > 0)
+                var trafficWave = view.CurrentWave is { } current
+                    && _scenario?.Waves.FirstOrDefault(w => w.Number == current)?.Kind == WaveSpec.Traffic;
+                if (view.Phase == GamePhase.Playing && trafficWave)
                 {
                     var outsiders = await Task.WhenAll(PortNames.Select(n => context.CanConnectAsync("defias", context.Port(n), ct)));
                     var garrison = await context.CanConnectAsync("garrison", context.Port("management"), ct);
