@@ -10,8 +10,8 @@ Planen har nio steg (se "Repostruktur och plan för fas 2" i designen). Gör ett
 - Steg 2, orkestreraren: klart, utom socket-proxyn som flyttas till steg 4. `Game.Cli soak 10` är grön på utvecklingsmaskinen med de riktiga avbilderna och macvlan.
 - Steg 3, målkontrollen: klart. `Game.Cli selftest` dömer 16 kända försvar rätt på utvecklingsmaskinen med riktig nginx och macvlan, två körningar i rad med jämna mätvärden. Våg 0 (spelarens rapport) har ingen kontroll ännu; den hör till `quest`-kommandot i steg 5.
 - Steg 4, isoleringstester och socket-proxy: klart. `Game.Cli isolation` (49 kontroller) och `Game.Cli proxytest` (31 kontroller) är gröna på utvecklingsmaskinen med macvlan.
-- Steg 5, scenariomotorn: koden finns i `src/Game.Core`, scenariot i `lab/scenarios/sentinel-hill.json` och `quest`-kommandot i `gate`-avbilden. `Game.Cli playtest` spelar igenom hela scenariot mot Docker 29 på Linux med ersättningsavbilder och bridge-nät. Återstår att köra `playtest` på utvecklingsmaskinen och att spela scenariot för hand och avgöra om det är roligt.
-- Steg 6, terminalgatewayen: koden finns i `src/Game.Api` (webbsida med xterm.js och WebSocket till ett skal i `gate`). `Game.Cli termtest` är grön mot Docker 29 på Linux, både direkt och genom proxyn. Återstår att köra den på utvecklingsmaskinen och öppna sidan i en webbläsare.
+- Steg 5, scenariomotorn: klart. Spelat för hand på utvecklingsmaskinen, med `quest` i porten. `Game.Cli playtest` är grön mot Docker 29 på Linux.
+- Steg 6, terminalgatewayen: klart. Webbterminalen fungerar i webbläsaren i Windows mot labbet i WSL. `Game.Cli termtest` är grön mot Docker 29 på Linux, direkt och genom proxyn.
 - Steg 7, klienten: inte påbörjad.
 
 ## Stack
