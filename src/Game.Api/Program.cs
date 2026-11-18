@@ -32,7 +32,13 @@ app.MapGet("/api/status", async (LabOrchestrator lab, CancellationToken ct) =>
     try
     {
         var run = (await lab.ListAsync(ct)).FirstOrDefault();
-        return Results.Json(new { running = run is not null, runId = run?.RunId, scenario = run?.Spec.Scenario });
+        return Results.Json(new
+        {
+            running = run?.IsRunning == true,
+            stopped = run is not null && !run.IsRunning,
+            runId = run?.RunId,
+            scenario = run?.Spec.Scenario,
+        });
     }
     catch (Exception e) when (e is HttpRequestException or DockerException or LabException)
     {
@@ -57,14 +63,24 @@ app.Map("/terminal", async (HttpContext context, LabOrchestrator lab, TerminalHu
     }
 
     var run = (await lab.ListAsync(context.RequestAborted)).FirstOrDefault();
-    if (run is null)
+    if (run is null || !run.IsRunning)
     {
         context.Response.StatusCode = StatusCodes.Status409Conflict;
-        await context.Response.WriteAsync("No lab is running.");
+        await context.Response.WriteAsync(run is null ? "No lab is running." : "The lab is stopped.");
         return;
     }
 
-    var session = await hub.GetAsync(run, context.RequestAborted);
+    TerminalSession session;
+    try
+    {
+        session = await hub.GetAsync(run, context.RequestAborted);
+    }
+    catch (DockerException e)
+    {
+        context.Response.StatusCode = StatusCodes.Status502BadGateway;
+        await context.Response.WriteAsync($"The terminal could not be started: {e.Message}");
+        return;
+    }
     using var socket = await context.WebSockets.AcceptWebSocketAsync();
     await session.AttachAsync(socket, context.RequestAborted);
 });

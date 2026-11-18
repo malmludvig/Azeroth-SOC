@@ -12,6 +12,13 @@ public sealed record LabRun(
     IReadOnlyList<LabNode> Nodes)
 {
     public string ContainerName(string role) => LabOrchestrator.ContainerName(RunId, role);
+
+    /// <summary>
+    /// Every container of the run exists and is running. Containers do not
+    /// restart on their own, so a run is stopped after Docker itself restarts.
+    /// </summary>
+    public bool IsRunning =>
+        Nodes.Count == Spec.Nodes.Count && Nodes.All(n => n.State == "running");
 }
 
 public sealed record LabResources(int Containers, int Networks)

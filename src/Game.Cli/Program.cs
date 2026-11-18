@@ -211,11 +211,26 @@ static async Task<int> Play(DockerEngine docker, LabOrchestrator lab, string[] o
     scenario.Wave(firstWave);
 
     var existing = await lab.ListAsync();
-    var run = existing.Count > 0
-        ? existing[0]
-        : await lab.UpAsync(SentinelHill.Create(Option("--seed", Random.Shared.Next())));
+    LabRun run;
+    string how;
+    if (existing.Count == 0)
+    {
+        run = await lab.UpAsync(SentinelHill.Create(Option("--seed", Random.Shared.Next())));
+        how = "new";
+    }
+    else if (existing[0].IsRunning)
+    {
+        run = existing[0];
+        how = "already running";
+    }
+    else
+    {
+        Console.WriteLine($"Run {existing[0].RunId} is stopped, probably because Docker restarted. Rebuilding it.");
+        run = await lab.ResetAsync(existing[0]);
+        how = "rebuilt";
+    }
 
-    Console.WriteLine($"{scenario.Title}  (run {run.RunId}, {(existing.Count > 0 ? "already running" : "new")})");
+    Console.WriteLine($"{scenario.Title}  (run {run.RunId}, {how})");
     Console.WriteLine();
     Console.WriteLine("Open a second terminal and step into the gate:");
     Console.WriteLine($"  docker exec -it {run.ContainerName("gate")} bash");
@@ -255,6 +270,8 @@ static async Task<int> Play(DockerEngine docker, LabOrchestrator lab, string[] o
 static void Print(LabRun run)
 {
     Console.WriteLine($"Run {run.RunId}  scenario {run.Spec.Scenario}  seed {run.Spec.Seed}  networks {run.Driver}");
+    if (!run.IsRunning)
+        Console.WriteLine("STOPPED: not every container is running, probably because Docker restarted. Rebuild it with: reset");
     Console.WriteLine($"Expires {run.Expires.ToLocalTime():yyyy-MM-dd HH:mm}");
     foreach (var network in run.Spec.Networks)
         Console.WriteLine($"  network {network.Key,-9} {network.Subnet}");

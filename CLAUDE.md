@@ -92,6 +92,7 @@ Dessa är krav, inte riktlinjer. Ändra dem inte utan att fråga.
 - **`Game.Api` lyssnar bara på 127.0.0.1 och kräver samma Origin på WebSocket-anslutningen.** Terminalen är ett root-skal i `gate`, så en sida från en annan webbplats får inte kunna öppna den genom spelarens webbläsare.
 - **Terminalen startas utan innehåll i begäran.** Kestrel, och därmed proxyn, nekar innehåll i en upgrade-begäran. Utan innehåll ramar Docker in utdata som för ett kommando utan terminal, och `TerminalConnection.ReadAsync` packar upp ramarna. Proxyn tillåter en terminal bara som `bash` i `gate`, utan privilegier, och bara upgrade för execs den själv skapat som terminaler.
 - **Sidan är vanlig JavaScript med xterm.js kopierat in i `wwwroot/vendor`** (MIT, oförändrat från npm). Inget byggsteg. TypeScript och Phaser kommer först med klienten i steg 7, om de behövs.
+- **En körning stannar när Docker startas om** och startar inte av sig själv (`RestartPolicy` är `no`). `LabRun.IsRunning` är falsk då; `status` säger det, `play` bygger om körningen med samma frö, och webbsidan visar att labbet är stoppat i stället för att försöka öppna en terminal.
 - **En delad avbild för värdarna på slätten** (`lab/images/host`). Trafiken skickas med `docker exec` från `Game.Checks`.
 
 ## Konventioner

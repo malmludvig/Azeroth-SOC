@@ -64,7 +64,9 @@
         return again();
       }
       if (!state.running) {
-        say(state.error ? 'Docker is not answering. Retrying...' : 'No lab is running. Start one with: Game.Cli play', true);
+        say(state.error ? 'Docker is not answering. Is Docker Desktop running? Retrying...'
+          : state.stopped ? 'The lab is stopped, probably because Docker restarted. Start the game again: Game.Cli play'
+          : 'No lab is running. Start one with: Game.Cli play', true);
         return again();
       }
 

@@ -60,6 +60,19 @@ internal static class TermTest
                 return 1;
             }
 
+            // A stopped run, as after Docker restarts, gives a clear answer instead of a terminal.
+            var stopped = await ProbeStoppedAsync(lab, run, http, terminal);
+            Expect("a stopped lab is reported as stopped and opens no terminal", stopped.Ok, stopped.Shown);
+            if (!stopped.Ok) return 1;
+            run = (await lab.FindAsync(run.RunId))!;
+            socket.Dispose();
+            socket = await ConnectAsync(terminal);
+            if (socket is null)
+            {
+                Expect("after a restart the terminal opens again", false);
+                return 1;
+            }
+
             await TypeAsync(socket, "echo marker-$((6*7))\r");
             var text = await ReadUntilAsync(socket, "marker-42");
             Expect("a command typed in the terminal runs in the gate", text.Contains("marker-42"), text);
@@ -124,6 +137,40 @@ internal static class TermTest
 
         Console.WriteLine(failures == 0 ? "Terminal test passed." : $"Terminal test FAILED: {failures} check(s).");
         return failures == 0 ? 0 : 1;
+    }
+
+    // Stops the gate the way a Docker restart would, checks what the API says,
+    // then rebuilds the run under the same id by starting the container again.
+    private static async Task<(bool Ok, string Shown)> ProbeStoppedAsync(
+        LabOrchestrator lab, LabRun run, HttpClient http, Uri terminal)
+    {
+        // Stopping a container is not one of the lab's own Docker calls, so the
+        // test uses the docker command for it rather than widening DockerEngine.
+        var gate = run.ContainerName("gate");
+        await DockerCliAsync("stop", "-t", "1", gate);
+        try
+        {
+            var status = await http.GetStringAsync("api/status");
+            var listed = await lab.FindAsync(run.RunId);
+            var refused = await ConnectAsync(terminal) is null;
+            var ok = status.Contains("\"stopped\":true") && status.Contains("\"running\":false")
+                && listed is { IsRunning: false } && refused;
+            return (ok, status);
+        }
+        finally
+        {
+            await DockerCliAsync("start", gate);
+        }
+    }
+
+    private static async Task DockerCliAsync(params string[] arguments)
+    {
+        var start = new System.Diagnostics.ProcessStartInfo("docker") { RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var argument in arguments) start.ArgumentList.Add(argument);
+        using var process = System.Diagnostics.Process.Start(start)!;
+        await process.WaitForExitAsync();
+        if (process.ExitCode != 0)
+            throw new LabException($"docker {string.Join(' ', arguments)} failed: {await process.StandardError.ReadToEndAsync()}");
     }
 
     private static async Task<ClientWebSocket?> ConnectAsync(Uri terminal, string? origin = null)
