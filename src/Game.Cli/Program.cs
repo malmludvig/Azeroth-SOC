@@ -15,6 +15,8 @@ using Game.Orchestration;
 //   selftest                    judge known right and wrong defences and require the expected verdicts
 //   play [--wave N] [--seed N]  play the scenario: you work in the gate, this terminal is the game master
 //   playtest                    play the whole scenario automatically and require the expected outcome
+//   history                     show your progress per wave over every game played
+//   themetest                   load every theme and check that none changes what the player must do
 //   hosttest                    play through the game host behind the web page and check what it shows
 //   termtest                    use the web terminal the way the browser does (needs src/Game.Api running)
 //   isolation                   try to get out of the lab from every container; every attempt must fail
@@ -40,12 +42,14 @@ try
         case "selftest": return await SelfTest.RunAsync(docker, lab);
         case "play": return await Play(docker, lab, options);
         case "playtest": return await PlayTest.RunAsync(docker, lab);
+        case "history": return History();
+        case "themetest": return ThemeTest.Run();
         case "hosttest": return await HostTest.RunAsync(docker, lab);
         case "termtest": return await TermTest.RunAsync(lab);
         case "isolation": return await IsolationTest.RunAsync(docker, lab);
         case "proxytest": return await ProxyTest.RunAsync();
         default:
-            Console.WriteLine("Usage: Game.Cli up [--seed N] [--replace] | status | reset | down | sweep [--expired] | soak [N] | check <wave> | selftest | isolation | proxytest | play [--wave N] | playtest | hosttest | termtest");
+            Console.WriteLine("Usage: Game.Cli up [--seed N] [--replace] | status | reset | down | sweep [--expired] | soak [N] | check <wave> | selftest | isolation | proxytest | play [--wave N] | playtest | hosttest | termtest | history | themetest");
             return command == "help" ? 0 : 2;
     }
 }
@@ -208,8 +212,11 @@ static async Task<int> Play(DockerEngine docker, LabOrchestrator lab, string[] o
         return at >= 0 && at + 1 < options.Length && int.TryParse(options[at + 1], out var value) ? value : fallback;
     }
 
-    var scenario = Scenario.Load(Scenario.Locate(SentinelHill.Scenario));
-    var firstWave = Option("--wave", scenario.Waves.Min(w => w.Number));
+    var themeAt = Array.IndexOf(options, "--theme");
+    var theme = Theme.Current(themeAt >= 0 && themeAt + 1 < options.Length ? options[themeAt + 1] : null);
+    var scenario = theme.Apply(Scenario.Load(Scenario.Locate(SentinelHill.Scenario)));
+    var history = HistoryStore.Default();
+    var firstWave = Option("--wave", history.SuggestedWave(scenario));
     scenario.Wave(firstWave);
 
     var existing = await lab.ListAsync();
@@ -236,10 +243,11 @@ static async Task<int> Play(DockerEngine docker, LabOrchestrator lab, string[] o
     Console.WriteLine();
     Console.WriteLine("Open a second terminal and step into the gate:");
     Console.WriteLine($"  docker exec -it {run.ContainerName("gate")} bash");
-    Console.WriteLine("Or, with src/Game.Api running, open http://127.0.0.1:5080 in your browser.");
     Console.WriteLine("Then type: quest");
     Console.WriteLine();
     Console.WriteLine("This terminal is the game master. Leave it running. Ctrl+C ends the game.");
+    Console.WriteLine("Do not play from the web page at the same time: there can only be one game master.");
+    Console.WriteLine($"Starting at wave {firstWave}. Theme: {theme.Name}.");
     Console.WriteLine();
 
     using var stop = new CancellationTokenSource();
@@ -249,7 +257,8 @@ static async Task<int> Play(DockerEngine docker, LabOrchestrator lab, string[] o
         stop.Cancel();
     };
 
-    var session = new GameSession(docker, run, scenario, line => Console.WriteLine($"  {line}"));
+    var recorder = new GameRecorder(history, scenario, theme, run.Spec.Seed, firstWave);
+    var session = new GameSession(docker, run, scenario, line => Console.WriteLine($"  {line}"), recorder.On);
     try
     {
         var outcomes = await session.RunAsync(firstWave, stop.Token);
@@ -264,8 +273,30 @@ static async Task<int> Play(DockerEngine docker, LabOrchestrator lab, string[] o
         Console.WriteLine();
         Console.WriteLine("Game ended. Your rules in the gate are still there.");
     }
+    recorder.End();
 
     Console.WriteLine("The lab is still running. Remove it with: down");
+    return 0;
+}
+
+static int History()
+{
+    var history = HistoryStore.Default();
+    var scenario = Theme.Current().Apply(Scenario.Load(Scenario.Locate(SentinelHill.Scenario)));
+    var games = history.Games.Where(g => g.Scenario == scenario.Id).ToList();
+    Console.WriteLine($"{scenario.Title}: {games.Count} game(s), {games.Count(g => g.Completed)} completed. Kept in {history.Path}");
+    Console.WriteLine();
+    foreach (var p in history.Progress(scenario))
+    {
+        var status = p.Mastered > 0 ? $"mastered {p.Mastered}x"
+            : p.Held > 0 ? $"held {p.Held}x, {p.HintsUsed} hint(s)"
+            : p.Played > 0 ? $"not held yet, {p.FailedAttempts} {(p.FailedAttempts == 1 ? "try" : "tries")}"
+            : "not played";
+        Console.WriteLine($"  Wave {p.Wave}  {p.Skill,-58} {(p.Held > 0 ? $"best {p.BestXp} XP" : ""),-13} {status}");
+        if (p.Mastered == 0 && p.StuckOn is { } stuck) Console.WriteLine($"          fell most on: {stuck}");
+    }
+    Console.WriteLine();
+    Console.WriteLine($"Practise next: wave {history.SuggestedWave(scenario)}");
     return 0;
 }
 

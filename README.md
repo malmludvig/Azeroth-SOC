@@ -2,7 +2,7 @@
 
 Ett personligt lärospel i nätverkssäkerhet. Du försvarar riktiga system i isolerade containrar med riktiga verktyg, och spelet dömer genom att skicka riktig trafik.
 
-Designen finns i [docs/design.md](docs/design.md). Projektet är i steg 7 av 9: scenariot Sentinel Hill går att spela i webbläsaren, med zonkarta, mätare och uppdragslogg runt terminalen.
+Designen finns i [docs/design.md](docs/design.md). Projektet är i steg 8 av 9: scenariot Sentinel Hill går att spela i webbläsaren, med zonkarta, mätare, uppdragslogg och sparade framsteg.
 
 ## Prova labbet
 
@@ -53,6 +53,16 @@ defias   .66   probe    .99
 ```
 
 All trafik mellan näten går genom `gate`. Näten har ingen väg ut.
+
+## Tema
+
+Spelet har World of Warcraft-tema som standard. Byt till ett neutralt tema med en rad:
+
+```bash
+export AZEROTH_THEME=neutral
+```
+
+Temana ligger i `themes/`. Ett tema ändrar bara namn och text, aldrig vad spelaren ska göra.
 
 ## Om temat
 

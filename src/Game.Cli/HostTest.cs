@@ -26,7 +26,9 @@ internal static class HostTest
         }
 
         var changes = 0;
-        using var host = new GameHost(docker, lab);
+        var historyPath = Path.Combine(Path.GetTempPath(), $"azeroth-hosttest-{Guid.NewGuid():N}.json");
+        var history = new HistoryStore(historyPath);
+        using var host = new GameHost(docker, lab, history, Theme.Load("wow"));
         host.Changed += () => Interlocked.Increment(ref changes);
 
         async Task<bool> WaitFor(Func<GameView, bool> condition, int seconds = 20)
@@ -57,8 +59,10 @@ internal static class HostTest
 
         try
         {
-            Expect("wave 0 is shown with its briefing", await WaitFor(v => v.CurrentWave == 0 && v.Briefing?.Contains("Map the gate") == true));
+            Expect("wave 0 is shown with its briefing", await WaitFor(v => v.CurrentWave == 0 && v.Briefing?.Contains("Wave 0 of 3") == true));
             Expect("the waves of the scenario are listed", host.View.Waves.Count == 4);
+            Expect("the game is in the host's theme", host.View.ScenarioTitle == host.LoadScenario().Title
+                && host.View.Briefing?.Contains("Gryan") == true, host.View.ScenarioTitle);
             await Task.Delay(3500);
             Expect("in wave 0 no doors are shown: finding them is the task", host.View.Doors.Count == 0);
             Expect("the gate's state is shown", await WaitFor(v => v.GateState is not null, 8), host.View.GateState ?? "");
@@ -102,6 +106,18 @@ internal static class HostTest
             Expect("the page was told about every change", changes > 10, changes.ToString());
 
             await host.StopAsync();
+            var saved = new HistoryStore(historyPath).Games;
+            Expect("the game is kept in the history, with both held waves and the failed attempt",
+                saved is [{ Theme: "wow", Completed: false, Ended: not null } game]
+                && game.Waves.Select(w => w.Wave).SequenceEqual([0, 1])
+                && game.Attempts.Count(a => !a.Held) == 1 && game.Hints.GetValueOrDefault(0) == 1,
+                saved.Count.ToString());
+            var progress = history.Progress(host.LoadScenario());
+            Expect("the progress shows wave 1 mastered, wave 0 held with a hint, and what wave 1 fell on",
+                progress[0] is { Held: 1, Mastered: 0, HintsUsed: 1 } && progress[1] is { Mastered: 1 }
+                && progress[1].StuckOn?.Contains("Defias scouts") == true,
+                string.Join(" | ", progress));
+            Expect("the next wave to practise is wave 0, the first not mastered", history.SuggestedWave(host.LoadScenario()) == 0);
             Expect("stopping ends the game but keeps the lab",
                 host.View.Phase == GamePhase.Idle && (await lab.FindAsync(run.RunId)) is { IsRunning: true });
             Expect("after stopping, quest says no game is running", (await Quest()).Contains("No game is running"));
@@ -115,6 +131,7 @@ internal static class HostTest
         {
             await host.StopAsync();
             await lab.DownAsync(run.RunId);
+            File.Delete(historyPath);
         }
 
         Console.WriteLine(failures == 0 ? "Host test passed." : $"Host test FAILED: {failures} check(s).");

@@ -7,10 +7,10 @@
 
 <div class="app">
     <header>
-        <strong class="title">@(string.IsNullOrEmpty(_view.ScenarioTitle) ? "Azeroth SOC" : _view.ScenarioTitle)</strong>
+        <strong class="title">@(string.IsNullOrEmpty(_view.ScenarioTitle) ? _scenario.Title : _view.ScenarioTitle)</strong>
 
         <ol class="waves">
-            @foreach (var (number, title) in _view.Waves)
+            @foreach (var (number, title) in _view.Waves.Count > 0 ? _view.Waves : _scenario.Waves.OrderBy(w => w.Number).Select(w => (w.Number, w.Title)).ToList())
             {
                 var done = _view.Outcomes.Any(o => o.Wave == number);
                 var current = _view.CurrentWave == number && _view.Phase != GamePhase.Completed;
@@ -44,7 +44,7 @@
 
     <main>
         <section class="left">
-            <ZoneMap View="_view" />
+            <ZoneMap View="_view" Theme="Game.Theme" />
             <GateTerminal />
         </section>
 
@@ -56,7 +56,7 @@
 
             <div class="card meters">
                 <div class="meter">
-                    <span class="label">Health of the town</span>
+                    <span class="label">@Game.Theme.Label("health")</span>
                     @if (_view.Health is { } health)
                     {
                         <div class="bar"><div class="fill @HealthClass(health)" style="width:@Percent(health)"></div></div>
@@ -117,6 +117,38 @@
                 </div>
             }
 
+            @if (!_view.Active)
+            {
+                var progress = Game.History.Progress(_scenario);
+                <div class="card progress">
+                    <strong>Your progress</strong>
+                    @if (progress.All(p => p.Played == 0))
+                    {
+                        <p class="muted">Nothing played yet. Every game you play is kept, and this shows which skills you have and which need practice.</p>
+                    }
+                    else
+                    {
+                        <table>
+                            <tr><th>Wave</th><th>Skill</th><th class="num">Best</th><th>Status</th></tr>
+                            @foreach (var p in progress)
+                            {
+                                <tr class="@(p.Mastered > 0 ? "mastered" : p.Held > 0 ? "held" : p.Played > 0 ? "stuck" : "")">
+                                    <td>@p.Wave</td>
+                                    <td>@p.Skill
+                                        @if (p.Mastered == 0 && p.StuckOn is { } stuck)
+                                        {
+                                            <div class="muted small">Fell most on: @stuck</div>
+                                        }
+                                    </td>
+                                    <td class="num">@(p.Held > 0 ? $"{p.BestXp} XP" : "")</td>
+                                    <td>@Status(p)</td>
+                                </tr>
+                            }
+                        </table>
+                    }
+                </div>
+            }
+
             @if (_view.Log.Count > 0)
             {
                 <div class="card log">
@@ -138,6 +170,7 @@
 
 @code {
     private GameView _view = GameView.Empty;
+    private Scenario _scenario = default!;
     private int _firstWave;
     private bool _busy;
     private static readonly int[] _waveChoices = [0, 1, 2, 3];
@@ -145,6 +178,8 @@
     protected override void OnInitialized()
     {
         _view = Game.View;
+        _scenario = Game.LoadScenario();
+        _firstWave = Game.History.SuggestedWave(_scenario);
         Game.Changed += OnChanged;
     }
 
@@ -188,6 +223,12 @@
         GamePhase.Judging => "The wave is coming...",
         _ => $"Wave {_view.CurrentWave}",
     };
+
+    private static string Status(SkillProgress p) =>
+        p.Mastered > 0 ? "mastered"
+        : p.Held > 0 ? $"held, {p.HintsUsed} hint(s)"
+        : p.Played > 0 ? $"not held yet, {p.FailedAttempts} {(p.FailedAttempts == 1 ? "try" : "tries")}"
+        : "not played";
 
     private static string Percent(double value) => $"{Math.Round(value * 100):0}%";
 

@@ -8,11 +8,26 @@ using Game.Orchestration;
 //   AZEROTH_API_URL  where to listen (default http://127.0.0.1:5080)
 //   DOCKER_HOST      Docker, or the lab's Docker proxy
 //   --start          begin a game right away (--wave N to start at a later wave)
+//   AZEROTH_THEME    the theme, a file themes/theme-<name>.json (default wow; --theme <name> overrides)
+//   AZEROTH_HOME     where the history is kept (default ~/.azeroth)
 //
 // It listens on localhost only. The terminal is a root shell in the gate, so
 // nothing but the player's own browser should be able to reach it.
 
 var url = Environment.GetEnvironmentVariable("AZEROTH_API_URL") ?? "http://127.0.0.1:5080";
+
+Theme theme;
+try
+{
+    var themeAt = Array.IndexOf(args, "--theme");
+    theme = Theme.Current(themeAt >= 0 && themeAt + 1 < args.Length ? args[themeAt + 1] : null);
+}
+catch (ScenarioException e)
+{
+    Console.Error.WriteLine(e.Message);
+    Console.Error.WriteLine($"Themes: {string.Join(", ", Theme.Available())}");
+    return 1;
+}
 
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
@@ -29,6 +44,8 @@ builder.WebHost.UseStaticWebAssets();
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddSingleton(_ => new DockerEngine());
 builder.Services.AddSingleton(services => new LabOrchestrator(services.GetRequiredService<DockerEngine>()));
+builder.Services.AddSingleton(theme);
+builder.Services.AddSingleton(_ => HistoryStore.Default());
 builder.Services.AddSingleton<GameHost>();
 builder.Services.AddSingleton<TerminalHub>();
 
@@ -108,7 +125,7 @@ app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 app.Lifetime.ApplicationStarted.Register(() =>
 {
-    Console.WriteLine($"Open {url} in your browser.");
+    Console.WriteLine($"Open {url} in your browser. Theme: {theme.Name}.");
     // --start begins a game right away, as if Start had been pressed; --wave N picks the first wave.
     if (!args.Contains("--start")) return;
     var at = Array.IndexOf(args, "--wave");
@@ -117,6 +134,7 @@ app.Lifetime.ApplicationStarted.Register(() =>
 });
 app.Lifetime.ApplicationStopping.Register(() => app.Services.GetRequiredService<GameHost>().StopAsync().GetAwaiter().GetResult());
 app.Run();
+return 0;
 
 static bool SameOrigin(HttpRequest request)
 {

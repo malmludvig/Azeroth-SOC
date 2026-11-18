@@ -26,7 +26,8 @@ public sealed record WaveSpec(
     string[] Briefing,
     string Question,
     HintSpec[] Hints,
-    CheckSpec[]? Checks = null)
+    CheckSpec[]? Checks = null,
+    string Skill = "")
 {
     public const string Report = "report";
     public const string Traffic = "traffic";
@@ -49,7 +50,7 @@ public sealed record Scenario(string Id, string Title, string[] Intro, string[] 
     public static readonly string[] HintConditions =
         ["always", "no-forward-chain", "policy-accept", "no-established", "no-rate-limit"];
 
-    private static readonly JsonSerializerOptions Json = new()
+    internal static readonly JsonSerializerOptions Json = new()
     {
         PropertyNameCaseInsensitive = true,
         ReadCommentHandling = JsonCommentHandling.Skip,
@@ -73,17 +74,19 @@ public sealed record Scenario(string Id, string Title, string[] Intro, string[] 
     }
 
     /// <summary>Finds lab/scenarios/&lt;id&gt;.json from the working directory or the program's own location.</summary>
-    public static string Locate(string id)
+    public static string Locate(string id) => LocateInRepository(Path.Combine("lab", "scenarios", id + ".json"));
+
+    internal static string LocateInRepository(string relative)
     {
         foreach (var start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
         {
             for (var dir = new DirectoryInfo(start); dir is not null; dir = dir.Parent)
             {
-                var candidate = Path.Combine(dir.FullName, "lab", "scenarios", id + ".json");
+                var candidate = Path.Combine(dir.FullName, relative);
                 if (File.Exists(candidate)) return candidate;
             }
         }
-        throw new ScenarioException($"Cannot find lab/scenarios/{id}.json. Run from inside the repository.");
+        throw new ScenarioException($"Cannot find {relative}. Run from inside the repository.");
     }
 
     public WaveSpec Wave(int number) =>

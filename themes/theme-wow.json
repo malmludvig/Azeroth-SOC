@@ -1,0 +1,100 @@
+{
+  "id": "wow",
+  "name": "World of Warcraft",
+  "names": {
+    "plains": "Westfall",
+    "town": "Sentinel Hill",
+    "gate": "Gate",
+    "board": "Notice board",
+    "citizens": "Farmers",
+    "garrison": "Militia",
+    "raiders": "Defias",
+    "travellers": "Wanderers",
+    "health": "Health of Sentinel Hill"
+  },
+  "scenarios": {
+    "sentinel-hill": {
+      "title": "The Defense of Sentinel Hill",
+      "intro": [
+        "Gryan Stoutmantle meets you at the gate of Sentinel Hill.",
+        "\"Westfall has no army but the People's Militia, and the Defias are everywhere.",
+        "Every road from the fields to the hill runs through this gate, and tonight it is yours.",
+        "The notice board stays open to the farmers. Nothing else is for outsiders.\""
+      ],
+      "outro": [
+        "Gryan Stoutmantle walks the length of your gate and nods.",
+        "\"The Defias found one door and only one. The Militia alone reaches the board's keep,",
+        "and their swarm broke against a limit that follows every rider wherever he comes from.",
+        "Stormwind will hear of this.\""
+      ],
+      "waves": {
+        "0": {
+          "title": "Know your gate",
+          "briefing": [
+            "\"Before you hold a gate you must know it,\" says Gryan. \"Nobody comes tonight. Use the time.\"",
+            "",
+            "Sentinel Hill's notice board is the host {web}.",
+            "Find out:",
+            "  - the network on the Westfall side of the gate",
+            "  - the network on the Sentinel Hill side of the gate",
+            "  - every TCP port on the notice board that answers from here",
+            "",
+            "Report with:",
+            "  quest report plains=<network/prefix> dmz=<network/prefix> ports=<port,port,...>"
+          ],
+          "question": "Four doors answered. How many of them does a farmer reading the board need?"
+        },
+        "1": {
+          "title": "Defias scouts",
+          "briefing": [
+            "Defias scouts creep along the fields, trying every door they can reach through the gate.",
+            "Right now that is every door: the gate forwards whatever arrives.",
+            "",
+            "\"The board's web port ({http}) is for everyone,\" says Gryan. \"Every other door on {web} stays shut to outsiders.\"",
+            "The farmers must still be able to read the board.",
+            "",
+            "Write your rules with nft. When you are ready: quest ready"
+          ],
+          "question": "Who besides the farmers needs to reach this board, and for what?"
+        },
+        "2": {
+          "title": "The break-in",
+          "briefing": [
+            "Someone in a red bandana is hammering at the board's management port ({management}),",
+            "again and again, from several farms at once.",
+            "",
+            "The People's Militia keeps the board from {garrison} and must keep that access.",
+            "Nobody else may reach the management port at all.",
+            "Everything from the last wave still has to hold.",
+            "",
+            "When you are ready: quest ready"
+          ],
+          "question": "The Militia's address is now a key. What happens the day the Defias get hold of it?"
+        },
+        "3": {
+          "title": "The Brotherhood rides",
+          "briefing": [
+            "Edwin VanCleef has sent the Brotherhood in force: a flood of requests at the board,",
+            "first from one farm, then from another.",
+            "The board is small. Left alone, the flood takes it down for everyone in Westfall.",
+            "",
+            "No single source may get more than 20 new connections a second through to {web}:{http}.",
+            "The farmers ask for a few pages a second and must hardly notice.",
+            "Everything from the earlier waves still has to hold.",
+            "",
+            "When you are ready: quest ready"
+          ],
+          "question": "Your limit counts per source address. What would the Brotherhood do with a thousand addresses?"
+        }
+      },
+      "checks": {
+        "scouts-reach-only-the-board": "The Defias scouts reach the notice board and nothing else",
+        "citizens-are-served": "The farmers can read the board",
+        "garrison-can-manage": "The Militia reaches the management port",
+        "probe-cannot-manage": "A wanderer on the fields cannot reach the management port",
+        "citizens-cannot-manage": "The farmers cannot reach the management port",
+        "swarm-is-held-back": "No rider floods the board, and the farmers are still served"
+      }
+    }
+  }
+}

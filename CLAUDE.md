@@ -13,14 +13,15 @@ Planen har nio steg (se "Repostruktur och plan för fas 2" i designen). Gör ett
 - Steg 5, scenariomotorn: klart. Spelat för hand på utvecklingsmaskinen, med `quest` i porten. `Game.Cli playtest` är grön mot Docker 29 på Linux.
 - Steg 6, terminalgatewayen: klart. Webbterminalen fungerar i webbläsaren i Windows mot labbet i WSL. `Game.Cli termtest` är grön mot Docker 29 på Linux, direkt och genom proxyn.
 - Steg 7, klienten: koden finns i `src/Game.Api/Components` (Blazor Server) och `src/Game.Core/GameHost.cs` (spelledaren i webbservern). `Game.Cli hosttest` är grön mot Docker 29 på Linux, direkt och genom proxyn, och sidan är kontrollerad i Chrome i alla lägen utom det interaktiva: Blazors `blazor.web.js` kommer från ett NuGet-paket som inte går att hämta i Claudes arbetsmiljö. Återstår att öppna sidan på utvecklingsmaskinen och spela från knappen Start.
-- Steg 8, tema och historik: inte påbörjat.
+- Steg 8, tema och historik: koden finns (`src/Game.Core/Theme.cs`, `History.cs`, `themes/`). `Game.Cli themetest` och `hosttest` är gröna mot Docker 29 på Linux, och sidan är kontrollerad i Chrome i båda temana. Återstår att spela på utvecklingsmaskinen och se framstegen sparas.
+- Steg 9, flytt till Proxmox: inte påbörjat.
 
 ## Stack
 
 - .NET 10. Backend: ASP.NET Core, SignalR och en egen tunn Docker-klient (`DockerEngine`). All spellogik ligger här.
 - Klient: Blazor Server i `Game.Api`, med xterm.js för terminalen. Sidan ritar bara `GameView` från `GameHost` och startar eller stoppar spelet; den innehåller inga regler.
-- Lagring: SQLite.
-- Scenarion: JSON i `lab/scenarios/`. Tema: `themes/theme-wow.json` (steg 8).
+- Lagring: en JSON-fil, `~/.azeroth/history.json` (eller `AZEROTH_HOME`).
+- Scenarion: JSON i `lab/scenarios/`. Teman: `themes/theme-<namn>.json`, valt med `AZEROTH_THEME` (standard `wow`, `neutral` finns).
 
 ## Kommandon
 
@@ -47,6 +48,9 @@ dotnet run --project src/Game.Cli -- play     # spela: den här terminalen är s
 dotnet run --project src/Game.Cli -- playtest # test av steg 5: automatisk genomspelning med fel försök och ledtrådar
 dotnet run --project src/Game.Api             # spelet i webbläsaren på http://127.0.0.1:5080 (egen terminal; --start [--wave N] startar direkt)
 dotnet run --project src/Game.Cli -- hosttest # test av steg 7: spelledaren bakom sidan, med quest i porten (inte samtidigt som Game.Api spelar)
+dotnet run --project src/Game.Cli -- history  # framsteg per våg över alla spel
+dotnet run --project src/Game.Cli -- themetest # test av steg 8: alla teman laddas och inget ändrar vad spelaren ska göra
+export AZEROTH_THEME=neutral                  # byt tema (Game.Api och Game.Cli; Game.Api tar också --theme <namn>)
 dotnet run --project src/Game.Cli -- termtest # test av steg 6: använder webbterminalen som webbläsaren gör (kräver Game.Api)
 dotnet run --project src/Game.Cli -- isolation # test av steg 4: försök ta sig ut ur labbet från varje container
 dotnet run --project src/Game.DockerProxy     # starta Docker-proxyn (egen terminal)
@@ -86,10 +90,13 @@ Dessa är krav, inte riktlinjer. Ändra dem inte utan att fråga.
 - **Floden i våg 3 kommer från två värdar i tur och ordning** (`defias`, sedan `probe`). Det ersätter designens adressbyte halvvägs och ger samma lektion: en spärrlista med en adress håller inte. Takten räknas i webbserverns logg efter den första sekunden, så att ett burst-utrymme inte räknas mot försvaret.
 - **Ingen kontroll får bero på väggklockan.** Klockan i WSL 2 kan gå fel med tiotals minuter och justeras i hopp efter att Windows legat i vila. En flod som pågick till ett klockslag tog då slut för tidigt och gav för låga mätvärden. Trafikskript räknar anrop, C#-koden mäter med `Stopwatch`, och en mätning som inte blev som planerat döms som underkänd (`INCONCLUSIVE`), aldrig som godkänd.
 - **Scenariot är JSON, inte YAML.** `lab/scenarios/sentinel-hill.json` bestämmer vågor, vilka kontroller varje våg använder och med vilka tal, ledtrådar och all text spelaren ser. Kontrollernas kod ligger i `Game.Checks` och topologin i `SentinelHill.cs`. Textfält är listor av rader.
-- **Scenariotexten är neutral och på engelska.** Den säger "the notice board" och "the garrison", inga WoW-namn. Namn, dialog och språk läggs ovanpå av temafilen i steg 8.
+- **Scenariotexten är neutral och på engelska.** Den säger "the notice board" och "the garrison", inga WoW-namn. Allt WoW ligger i `themes/theme-wow.json`.
+- **Ett tema ersätter bara text:** scenariots titel, intro och outro, vågornas titlar, uppdrag och frågor, kontrollernas titlar, och namnen sidan visar (`Theme.NeutralNames` listar nycklarna). Vad en våg kontrollerar och ledtrådarna ändras aldrig. `Theme.Apply` nekar ett uppdrag som tappar en `{platshållare}` eller en rad med ett `quest`-kommando ur originalet, så att ett tema inte kan ändra vad spelaren ska göra. Domens detaljrader använder rollnamnen (`defias`, `garrison`) oavsett tema.
+- **Temat väljs vid start.** Ett byte kräver omstart av `Game.Api`.
 - **`quest` talar med spelet genom filer i `/run/quest` i `gate`.** Porten har ingen nätväg till spelet. `quest` lämnar en begäran, spelledaren hämtar den utifrån med `docker exec` och lämnar ett svar. Inget spelet avgör vilar på de filerna: rapporten jämförs med facit och vågor döms av trafik.
 - **En våg är själva domen.** Trafiken i en våg är kontrollernas trafik, 10 till 25 sekunder. Det finns ingen separat fas där spelaren justerar under pågående attack; spelaren justerar och ringer i klockan igen. Genomgången efter en våg är kontrollernas utfall och portens läge, inte en tidslinje från regelräknare.
-- **Poäng**: vågens grundpoäng, minus 20 per ledtrådsnivå och 10 per misslyckat försök, lägst 10. En våg är bemästrad om den hölls utan ledtråd. Framsteg sparas inte mellan körningar förrän i steg 8; `play --wave N` hoppar till en våg.
+- **Poäng**: vågens grundpoäng, minus 20 per ledtrådsnivå och 10 per misslyckat försök, lägst 10. En våg är bemästrad om den hölls utan ledtråd.
+- **Historiken är en JSON-fil, inte SQLite.** NuGet är spärrat i Claudes arbetsmiljö, och för en spelare räcker en fil som läses en gång och skrivs om vid varje ändring. `GameRecorder` sparar varje spel medan det spelas: försök, vilka kontroller som föll (som id, så att varje tema kan namnge dem), ledtrådar och hållna vågor. Framstegen räknas per våg och färdighet (`skill` i scenariot), och spelet föreslår att börja på den första våg som inte är bemästrad.
 - **Webbterminalen är ett skal per körning som lever kvar på servern.** Webbläsare kopplar till och från; de senaste 64 kB utdata spelas upp igen vid återanslutning, så en omladdning ger samma prompt och historik. Lämnar spelaren skalet (`exit`) startas ett nytt vid nästa anslutning.
 - **`Game.Api` lyssnar bara på 127.0.0.1 och kräver samma Origin på WebSocket-anslutningen.** Terminalen är ett root-skal i `gate`, så en sida från en annan webbplats får inte kunna öppna den genom spelarens webbläsare.
 - **Terminalen startas utan innehåll i begäran.** Kestrel, och därmed proxyn, nekar innehåll i en upgrade-begäran. Utan innehåll ramar Docker in utdata som för ett kommando utan terminal, och `TerminalConnection.ReadAsync` packar upp ramarna. Proxyn tillåter en terminal bara som `bash` i `gate`, utan privilegier, och bara upgrade för execs den själv skapat som terminaler.

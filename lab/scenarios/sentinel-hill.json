@@ -13,6 +13,7 @@
   "waves": [
     {
       "number": 0,
+      "skill": "Reading a network: interfaces, routes and listening ports",
       "title": "Map the gate",
       "kind": "report",
       "xp": 50,
@@ -56,6 +57,7 @@
     },
     {
       "number": 1,
+      "skill": "Default deny and connection tracking",
       "title": "The scouts",
       "kind": "traffic",
       "xp": 100,
@@ -145,6 +147,7 @@
     },
     {
       "number": 2,
+      "skill": "Rules by source address",
       "title": "The break-in",
       "kind": "traffic",
       "xp": 100,
@@ -221,6 +224,7 @@
     },
     {
       "number": 3,
+      "skill": "Rate limiting per source",
       "title": "The swarm",
       "kind": "traffic",
       "xp": 100,

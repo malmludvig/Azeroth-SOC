@@ -76,7 +76,7 @@ aside { min-height: 0; overflow-y: auto; padding: 12px; display: flex; flex-dire
 .bad { color: var(--bad); }
 
 .meters { display: flex; flex-direction: column; gap: 8px; }
-.meter { display: grid; grid-template-columns: 140px 1fr auto; align-items: center; gap: 10px; }
+.meter { display: grid; grid-template-columns: 180px 1fr auto; align-items: center; gap: 10px; }
 .meter .label { color: var(--muted); }
 .meter .value { font-weight: 600; grid-column: 3; }
 .meter .value.muted { font-weight: normal; grid-column: 2 / 4; }
@@ -90,6 +90,15 @@ aside { min-height: 0; overflow-y: auto; padding: 12px; display: flex; flex-dire
 .summary table { width: 100%; margin-top: 8px; border-collapse: collapse; }
 .summary td { padding: 3px 4px; border-top: 1px solid var(--line); }
 .summary .num { text-align: right; color: var(--accent); }
+
+.progress table { width: 100%; margin-top: 8px; border-collapse: collapse; font-size: 13px; }
+.progress th { text-align: left; color: var(--muted); font-weight: normal; padding: 3px 4px; }
+.progress td { padding: 4px; border-top: 1px solid var(--line); vertical-align: top; }
+.progress .num { text-align: right; white-space: nowrap; }
+.progress tr.mastered td:last-child { color: var(--good); }
+.progress tr.held td:last-child { color: var(--accent); }
+.progress tr.stuck td:last-child { color: var(--warn); }
+.small { font-size: 12px; }
 
 .log { display: flex; flex-direction: column; gap: 10px; }
 .entry { border-left: 3px solid var(--line); padding-left: 8px; }

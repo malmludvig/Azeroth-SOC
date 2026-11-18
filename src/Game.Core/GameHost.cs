@@ -52,7 +52,7 @@ public sealed record GameView(
 /// into a <see cref="GameView"/>, and between waves keeps a live picture of
 /// which doors on the notice board the gate leaves open.
 /// </summary>
-public sealed class GameHost(DockerEngine docker, LabOrchestrator lab) : IDisposable
+public sealed class GameHost(DockerEngine docker, LabOrchestrator lab, HistoryStore history, Theme theme) : IDisposable
 {
     private static readonly TimeSpan ProbeInterval = TimeSpan.FromSeconds(3);
     private static readonly string[] PortNames = ["http", "management", "debug", "database"];
@@ -65,6 +65,14 @@ public sealed class GameHost(DockerEngine docker, LabOrchestrator lab) : IDispos
     private GameSession? _session;
     private Scenario? _scenario;
     private LabRun? _run;
+    private GameRecorder? _recorder;
+
+    public Theme Theme => theme;
+
+    public HistoryStore History => history;
+
+    /// <summary>The scenario as the player sees it, in this host's theme.</summary>
+    public Scenario LoadScenario() => theme.Apply(Scenario.Load(Scenario.Locate(SentinelHill.Scenario)));
 
     public GameView View { get; private set; } = GameView.Empty;
 
@@ -79,7 +87,7 @@ public sealed class GameHost(DockerEngine docker, LabOrchestrator lab) : IDispos
             if (View.Active) return;
             await StopAsync();
 
-            var scenario = Scenario.Load(Scenario.Locate(SentinelHill.Scenario));
+            var scenario = LoadScenario();
             scenario.Wave(firstWave);
             Update(_ => GameView.Empty with
             {
@@ -104,8 +112,10 @@ public sealed class GameHost(DockerEngine docker, LabOrchestrator lab) : IDispos
 
             var stop = new CancellationTokenSource();
             var session = new GameSession(docker, run, scenario, events: OnEvent);
+            var recorder = new GameRecorder(history, scenario, theme, run.Spec.Seed, firstWave);
             lock (_lock)
             {
+                _recorder = recorder;
                 _stop = stop;
                 _session = session;
                 _scenario = scenario;
@@ -141,12 +151,15 @@ public sealed class GameHost(DockerEngine docker, LabOrchestrator lab) : IDispos
     {
         CancellationTokenSource? stop;
         GameSession? session;
+        GameRecorder? recorder;
         lock (_lock)
         {
             stop = _stop;
             session = _session;
+            recorder = _recorder;
             _stop = null;
             _session = null;
+            _recorder = null;
         }
         if (stop is null) return;
 
@@ -172,6 +185,7 @@ public sealed class GameHost(DockerEngine docker, LabOrchestrator lab) : IDispos
             // The lab is gone; there is nothing to close.
         }
         stop.Dispose();
+        recorder?.End();
 
         Update(v => v.Phase is GamePhase.Completed or GamePhase.Failed ? v : v with { Phase = GamePhase.Idle });
     }
@@ -180,6 +194,15 @@ public sealed class GameHost(DockerEngine docker, LabOrchestrator lab) : IDispos
 
     private void OnEvent(GameEvent e)
     {
+        try
+        {
+            _recorder?.On(e);
+        }
+        catch (IOException)
+        {
+            // A history that cannot be written must not stop the game.
+        }
+
         var now = DateTimeOffset.Now;
         switch (e)
         {
