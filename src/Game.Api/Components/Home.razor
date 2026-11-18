@@ -3,6 +3,7 @@
    Everything shown comes from the GameHost; this page only draws it and
    starts or stops the game. *@
 @inject GameHost Game
+@inject IJSRuntime JS
 @implements IDisposable
 
 <div class="app">
@@ -24,6 +25,10 @@
             @if (_view.Active)
             {
                 <span class="phase">@PhaseText</span>
+                <button class="secondary cheat @(_view.CheatMode ? "on" : "")" @onclick="ToggleCheat"
+                        title="Shows the answer to every wave. Waves not yet held then give 10 XP and are not mastered.">
+                    @(_view.CheatMode ? "Hide answers" : "Cheat mode")
+                </button>
                 <button class="secondary" @onclick="StopAsync" disabled="@_busy">Stop</button>
             }
             else
@@ -99,6 +104,26 @@
                             </tr>
                         }
                     </table>
+                </div>
+            }
+
+            @if (_view.CheatMode && _view.Answers is { } answers)
+            {
+                <div class="card answers">
+                    <strong>Cheat mode: the answers</strong>
+                    <p class="muted small">Paste a wave's commands into the terminal. Waves not held before cheat mode give @GameSession.MinimumXp XP and are not mastered.</p>
+                    @foreach (var answer in answers)
+                    {
+                        var held = _view.Outcomes.Any(o => o.Wave == answer.Wave);
+                        <div class="answer @(answer.Wave == _view.CurrentWave ? "current" : "") @(held ? "held" : "")">
+                            <div class="answer-title">
+                                <span>Wave @answer.Wave: @answer.Title@(held ? " (held)" : "")</span>
+                                <button class="secondary small" @onclick="() => CopyAsync(answer.Steps)">Copy</button>
+                            </div>
+                            <pre class="steps">@answer.Steps</pre>
+                            <p class="discussion"><strong>The question:</strong> @answer.Discussion</p>
+                        </div>
+                    }
                 </div>
             }
 
@@ -217,6 +242,24 @@
         }
     }
 
+    private void ToggleCheat()
+    {
+        if (_view.CheatMode) Game.HideAnswers();
+        else Game.ShowAnswers();
+    }
+
+    private async Task CopyAsync(string text)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+        }
+        catch (JSException)
+        {
+            // The browser refused the clipboard; the text is still there to select.
+        }
+    }
+
     private string PhaseText => _view.Phase switch
     {
         GamePhase.Building => "Building the lab...",
@@ -226,6 +269,7 @@
 
     private static string Status(SkillProgress p) =>
         p.Mastered > 0 ? "mastered"
+        : p.Held > 0 && p.HeldWithoutAnswer == 0 ? "held with the answer"
         : p.Held > 0 ? $"held, {p.HintsUsed} hint(s)"
         : p.Played > 0 ? $"not held yet, {p.FailedAttempts} {(p.FailedAttempts == 1 ? "try" : "tries")}"
         : "not played";

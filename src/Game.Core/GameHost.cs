@@ -36,7 +36,9 @@ public sealed record GameView(
     int? Intrusions,
     IReadOnlyList<Door> Doors,
     string? GateState,
-    string? Error)
+    string? Error,
+    bool CheatMode = false,
+    IReadOnlyList<Answer>? Answers = null)
 {
     public static readonly GameView Empty = new(
         GamePhase.Idle, null, "", [], null, null, [], [], null, null, [], null, null);
@@ -146,6 +148,39 @@ public sealed class GameHost(DockerEngine docker, LabOrchestrator lab, HistorySt
         }
     }
 
+    /// <summary>
+    /// Cheat mode: shows the answer to every wave of the running game. Every
+    /// wave not yet held counts as cheated from now on, also after the answers
+    /// are hidden again.
+    /// </summary>
+    public void ShowAnswers()
+    {
+        GameSession? session;
+        Scenario? scenario;
+        LabRun? run;
+        lock (_lock)
+        {
+            session = _session;
+            scenario = _scenario;
+            run = _run;
+        }
+        if (session is null || scenario is null || run is null) return;
+
+        var held = View.Outcomes.Select(o => o.Wave).ToHashSet();
+        var revealed = scenario.Waves.Select(w => w.Number).Where(n => !held.Contains(n)).ToList();
+        session.Reveal(revealed);
+        var answers = Answers.For(scenario, run.Spec);
+        Update(v => v with
+        {
+            CheatMode = true,
+            Answers = answers,
+            Log = v.CheatMode ? v.Log : Append(v.Log, new LogEntry(DateTimeOffset.Now, "cheat", "Cheat mode: answers shown",
+                revealed.Count == 0 ? "" : $"Waves {string.Join(", ", revealed)} now give {GameSession.MinimumXp} XP when held, and are not mastered.")),
+        });
+    }
+
+    public void HideAnswers() => Update(v => v with { CheatMode = false });
+
     /// <summary>Ends the game. The lab and the player's rules in the gate stay.</summary>
     public async Task StopAsync()
     {
@@ -187,7 +222,7 @@ public sealed class GameHost(DockerEngine docker, LabOrchestrator lab, HistorySt
         stop.Dispose();
         recorder?.End();
 
-        Update(v => v.Phase is GamePhase.Completed or GamePhase.Failed ? v : v with { Phase = GamePhase.Idle });
+        Update(v => (v.Phase is GamePhase.Completed or GamePhase.Failed ? v : v with { Phase = GamePhase.Idle }) with { CheatMode = false });
     }
 
     public void Dispose() => _stop?.Cancel();
@@ -246,7 +281,7 @@ public sealed class GameHost(DockerEngine docker, LabOrchestrator lab, HistorySt
                 {
                     Outcomes = [.. v.Outcomes, held.Outcome],
                     Log = Append(v.Log, new LogEntry(now, "xp",
-                        $"Wave {held.Outcome.Wave} held: +{held.Outcome.Xp} XP" + (held.Outcome.Mastered ? ", mastered" : ""),
+                        $"Wave {held.Outcome.Wave} held: +{held.Outcome.Xp} XP" + (held.Outcome.Mastered ? ", mastered" : held.Outcome.Cheated ? ", with the answer" : ""),
                         "To think about: " + held.Question)),
                 });
                 break;

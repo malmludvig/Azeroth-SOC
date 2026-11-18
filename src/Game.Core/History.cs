@@ -33,7 +33,8 @@ public sealed record SkillProgress(
     int BestXp,
     int FailedAttempts,
     int HintsUsed,
-    string? StuckOn);
+    string? StuckOn,
+    int HeldWithoutAnswer = 0);
 
 /// <summary>
 /// The player's games, kept in a JSON file in their own directory
@@ -111,7 +112,8 @@ public sealed class HistoryStore
                 BestXp: outcomes.Count > 0 ? outcomes.Max(o => o.Xp) : 0,
                 FailedAttempts: failed.Count,
                 HintsUsed: games.Sum(g => g.Hints.GetValueOrDefault(wave.Number)),
-                StuckOn: stuckOn);
+                StuckOn: stuckOn,
+                HeldWithoutAnswer: outcomes.Count(o => !o.Cheated));
         }).ToList();
     }
 

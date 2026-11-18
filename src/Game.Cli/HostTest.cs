@@ -125,7 +125,31 @@ internal static class HostTest
             await host.StartAsync(firstWave: 2);
             Expect("a new game reuses the running lab and can start at a later wave",
                 await WaitFor(v => v.CurrentWave == 2) && host.View.RunId == run.RunId);
+
+            host.ShowAnswers();
+            view = host.View;
+            var answers = view.Answers ?? [];
+            var web = spec.Node("web").AddressOn(SentinelHill.Dmz);
+            Expect("cheat mode shows an answer for every wave, with this run's addresses and ports",
+                view.CheatMode && answers.Count == 4
+                && answers[0].Steps == $"quest report plains={plains} dmz={dmz} ports={string.Join(",", spec.Parameters.Values.Select(int.Parse).Order())}"
+                && answers[2].Steps.Contains(web) && answers[2].Steps.Contains(spec.Node("garrison").AddressOn(SentinelHill.Plains))
+                && answers.All(a => a.Discussion.Length > 0 && !a.Steps.Contains('{' + "web}")),
+                answers.Count > 0 ? answers[0].Steps : "no answers");
+            Expect("turning cheat mode on is noted in the log", view.Log.Last().Kind == "cheat");
+
+            await docker.ExecAsync(run.ContainerName("gate"), ["nft", "flush", "ruleset"]);
+            var pasted = await docker.ExecAsync(run.ContainerName("gate"), ["sh", "-c", answers[2].Steps]);
+            await Quest("ready");
+            Expect("the pasted answer holds wave 2, for the minimum XP and not mastered",
+                pasted.Succeeded && await WaitFor(v => v.Outcomes.Any(o => o.Wave == 2))
+                && host.View.Outcomes.First(o => o.Wave == 2) is { Xp: GameSession.MinimumXp, Mastered: false, Cheated: true },
+                string.Join(", ", host.View.Outcomes));
+            host.HideAnswers();
+            Expect("the answers can be hidden again", !host.View.CheatMode);
             await host.StopAsync();
+            Expect("the history shows wave 2 as held with the answer",
+                history.Progress(host.LoadScenario())[2] is { Held: 1, Mastered: 0, HeldWithoutAnswer: 0 });
         }
         finally
         {

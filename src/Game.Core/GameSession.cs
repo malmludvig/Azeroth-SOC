@@ -4,8 +4,8 @@ using Game.Orchestration;
 
 namespace Game.Core;
 
-/// <summary>How a wave went. Mastered means held without any hint.</summary>
-public sealed record WaveOutcome(int Wave, string Title, int Attempts, int HintsUsed, int Xp, bool Mastered);
+/// <summary>How a wave went. Mastered means held without any hint; Cheated means held after its answer was shown.</summary>
+public sealed record WaveOutcome(int Wave, string Title, int Attempts, int HintsUsed, int Xp, bool Mastered, bool Cheated = false);
 
 /// <summary>Something that happened in the game, for anyone showing it.</summary>
 public abstract record GameEvent;
@@ -42,6 +42,21 @@ public sealed class GameSession(
     private readonly Action<GameEvent> _events = events ?? (_ => { });
     private readonly GateMailbox _mailbox = new(docker, run);
     private readonly CheckContext _context = new(docker, run);
+    private readonly HashSet<int> _revealed = [];
+
+    /// <summary>
+    /// The answers to these waves have been shown to the player. Such a wave,
+    /// once held, gives the minimum XP and is not mastered.
+    /// </summary>
+    public void Reveal(IEnumerable<int> waves)
+    {
+        lock (_revealed) _revealed.UnionWith(waves);
+    }
+
+    private bool Revealed(int wave)
+    {
+        lock (_revealed) return _revealed.Contains(wave);
+    }
 
     public async Task<IReadOnlyList<WaveOutcome>> RunAsync(int firstWave = 0, CancellationToken ct = default)
     {
@@ -70,7 +85,7 @@ public sealed class GameSession(
 
             var reply = new StringBuilder(verdictText);
             reply.AppendLine().AppendLine($"Wave {wave.Number} is held. +{outcome.Xp} XP" +
-                (outcome.Mastered ? ", and mastered: no hints used." : "."));
+                (outcome.Mastered ? ", and mastered: no hints used." : outcome.Cheated ? ", with the answer shown." : "."));
             reply.AppendLine().AppendLine("To think about: " + wave.Question);
             reply.AppendLine().Append(last ? Ending(outcomes) : "The next mission is waiting: quest");
             await _mailbox.ReplyAsync(request, reply.ToString(), ct);
@@ -136,8 +151,9 @@ public sealed class GameSession(
             _events(new AttemptJudged(wave.Number, attempts, held, verdict, outcomes));
             if (held)
             {
-                var xp = Math.Max(MinimumXp, wave.Xp - HintCost * hints - RetryCost * (attempts - 1));
-                return (new WaveOutcome(wave.Number, wave.Title, attempts, hints, xp, hints == 0), request, verdict);
+                var cheated = Revealed(wave.Number);
+                var xp = cheated ? MinimumXp : Math.Max(MinimumXp, wave.Xp - HintCost * hints - RetryCost * (attempts - 1));
+                return (new WaveOutcome(wave.Number, wave.Title, attempts, hints, xp, hints == 0 && !cheated, cheated), request, verdict);
             }
 
             _log($"Wave {wave.Number}: not held on attempt {attempts}");

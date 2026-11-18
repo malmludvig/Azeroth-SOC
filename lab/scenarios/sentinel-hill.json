@@ -53,6 +53,13 @@
             "nc -zv {web} 1-30000 2>&1 | grep succeeded"
           ]
         }
+      ],
+      "answer": [
+        "quest report plains={plains} dmz={dmz} ports={ports}"
+      ],
+      "questionAnswer": [
+        "One: the web port. Management, the debug page and the database answered too, and none of them is for a reader.",
+        "Every port that answers is a way in. The next waves are about closing the ones nobody outside needs."
       ]
     },
     {
@@ -77,8 +84,14 @@
           "type": "ports",
           "title": "The scouts reach the notice board and nothing else",
           "from": "defias",
-          "open": ["http"],
-          "closed": ["management", "debug", "database"]
+          "open": [
+            "http"
+          ],
+          "closed": [
+            "management",
+            "debug",
+            "database"
+          ]
         },
         {
           "id": "citizens-are-served",
@@ -143,6 +156,23 @@
             "}"
           ]
         }
+      ],
+      "answer": [
+        "cat > /root/gate.nft <<'EOF'",
+        "flush ruleset",
+        "table inet gate {",
+        "  chain forward {",
+        "    type filter hook forward priority 0; policy drop;",
+        "    ct state established,related accept",
+        "    ip daddr {web} tcp dport {http} accept",
+        "  }",
+        "}",
+        "EOF",
+        "nft -f /root/gate.nft"
+      ],
+      "questionAnswer": [
+        "The garrison, which manages the board over port {management}.",
+        "A default-deny gate shuts the garrison out too, so the next wave opens that door again, for the garrison alone."
       ]
     },
     {
@@ -168,23 +198,34 @@
           "type": "ports",
           "title": "The garrison reaches the management port",
           "from": "garrison",
-          "open": ["management", "http"]
+          "open": [
+            "management",
+            "http"
+          ]
         },
         {
           "id": "probe-cannot-manage",
           "type": "ports",
           "title": "Another host on the plains cannot reach the management port",
           "from": "probe",
-          "open": ["http"],
-          "closed": ["management"]
+          "open": [
+            "http"
+          ],
+          "closed": [
+            "management"
+          ]
         },
         {
           "id": "citizens-cannot-manage",
           "type": "ports",
           "title": "The citizens cannot reach the management port",
           "from": "citizens",
-          "open": ["http"],
-          "closed": ["management"]
+          "open": [
+            "http"
+          ],
+          "closed": [
+            "management"
+          ]
         }
       ],
       "hints": [
@@ -220,6 +261,24 @@
             "nft add rule inet gate forward ...   adds it without reloading the file"
           ]
         }
+      ],
+      "answer": [
+        "cat > /root/gate.nft <<'EOF'",
+        "flush ruleset",
+        "table inet gate {",
+        "  chain forward {",
+        "    type filter hook forward priority 0; policy drop;",
+        "    ct state established,related accept",
+        "    ip saddr {garrison} ip daddr {web} tcp dport {management} accept",
+        "    ip daddr {web} tcp dport {http} accept",
+        "  }",
+        "}",
+        "EOF",
+        "nft -f /root/gate.nft"
+      ],
+      "questionAnswer": [
+        "An address is easy to borrow: a host on the same network can take it, and simple traffic can be sent from it without owning it.",
+        "Real management access needs something only the garrison has as well, such as an SSH key, and ideally a separate management network or a VPN."
       ]
     },
     {
@@ -244,7 +303,10 @@
           "id": "swarm-is-held-back",
           "type": "flood",
           "title": "No source floods the board, and the citizens are still served",
-          "attackers": ["defias", "probe"],
+          "attackers": [
+            "defias",
+            "probe"
+          ],
           "citizens": "citizens",
           "maxPerSecond": 20,
           "min": 0.95
@@ -290,6 +352,30 @@
             "    ip daddr {web} tcp dport {http} ct state new add @flood { ip saddr limit rate over ____/second burst ____ packets } drop"
           ]
         }
+      ],
+      "answer": [
+        "cat > /root/gate.nft <<'EOF'",
+        "flush ruleset",
+        "table inet gate {",
+        "  set flood {",
+        "    type ipv4_addr",
+        "    flags dynamic",
+        "    timeout 30s",
+        "  }",
+        "  chain forward {",
+        "    type filter hook forward priority 0; policy drop;",
+        "    ct state established,related accept",
+        "    ip saddr {garrison} ip daddr {web} tcp dport {management} accept",
+        "    ip daddr {web} tcp dport {http} ct state new add @flood { ip saddr limit rate over 10/second burst 10 packets } drop",
+        "    ip daddr {web} tcp dport {http} accept",
+        "  }",
+        "}",
+        "EOF",
+        "nft -f /root/gate.nft"
+      ],
+      "questionAnswer": [
+        "Spread the flood over so many sources that each one stays under the limit.",
+        "A limit per source stops one loud host. Against many you also need a limit for the service as a whole, filtering further upstream, and a server that can take the load."
       ]
     }
   ]

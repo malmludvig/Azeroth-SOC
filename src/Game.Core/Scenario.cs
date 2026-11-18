@@ -27,7 +27,9 @@ public sealed record WaveSpec(
     string Question,
     HintSpec[] Hints,
     CheckSpec[]? Checks = null,
-    string Skill = "")
+    string Skill = "",
+    string[]? Answer = null,
+    string[]? QuestionAnswer = null)
 {
     public const string Report = "report";
     public const string Traffic = "traffic";

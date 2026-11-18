@@ -91,15 +91,30 @@ internal static class SelfTest
                 foreach (var result in verdict.Outcomes.Select(o => o.Result).Where(r => !r.Passed || !agrees))
                     Console.WriteLine($"         {(result.Passed ? "pass" : "fail")}  {result.Id}: {result.Detail}");
             }
+
+            // The answers of cheat mode, run exactly as the player would paste them.
+            foreach (var answer in Answers.For(scenario, run.Spec).Where(a => scenario.Wave(a.Wave).Kind == WaveSpec.Traffic))
+            {
+                await docker.ExecAsync(run.ContainerName("gate"), ["nft", "flush", "ruleset"]);
+                var pasted = await docker.ExecAsync(run.ContainerName("gate"), ["sh", "-c", answer.Steps]);
+                var verdict = await scenario.JudgeAsync(answer.Wave, context);
+                var agrees = pasted.Succeeded && verdict.Passed;
+                if (!agrees) wrong++;
+                Console.WriteLine($"{(agrees ? "ok   " : "WRONG")}  wave {answer.Wave}  cheat-mode answer judged {(verdict.Passed ? "PASS" : "FAIL")}");
+                if (!pasted.Succeeded) Console.WriteLine($"         the answer did not run: {pasted.Output.Trim()}");
+                foreach (var result in verdict.Outcomes.Select(o => o.Result).Where(r => !r.Passed))
+                    Console.WriteLine($"         fail  {result.Id}: {result.Detail}");
+            }
         }
         finally
         {
             await lab.DownAsync(run.RunId);
         }
 
+        var total = Defences.Length + scenario.TrafficWaves.Count();
         Console.WriteLine(wrong == 0
-            ? $"Self-test passed: {Defences.Length} defences judged as expected."
-            : $"Self-test FAILED: {wrong} of {Defences.Length} defences judged wrongly.");
+            ? $"Self-test passed: {total} defences judged as expected."
+            : $"Self-test FAILED: {wrong} of {total} defences judged wrongly.");
         return wrong == 0 ? 0 : 1;
     }
 

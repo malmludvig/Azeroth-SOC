@@ -289,6 +289,7 @@ static int History()
     foreach (var p in history.Progress(scenario))
     {
         var status = p.Mastered > 0 ? $"mastered {p.Mastered}x"
+            : p.Held > 0 && p.HeldWithoutAnswer == 0 ? $"held {p.Held}x with the answer"
             : p.Held > 0 ? $"held {p.Held}x, {p.HintsUsed} hint(s)"
             : p.Played > 0 ? $"not held yet, {p.FailedAttempts} {(p.FailedAttempts == 1 ? "try" : "tries")}"
             : "not played";
